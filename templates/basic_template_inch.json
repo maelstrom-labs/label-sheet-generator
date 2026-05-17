@@ -1,0 +1,49 @@
+{
+  "name": "basic-address-labels-inch",
+  "page": {
+    "width_in": 8.50,
+    "height_in": 11.00
+  },
+  "grid": {
+    "rows": 10,
+    "cols": 3,
+    "margin_left_in": 0.19,
+    "margin_top_in": 0.50,
+    "margin_right_in": 0.19,
+    "margin_bottom_in": 0.50,
+    "gap_x_in": 0.13,
+    "gap_y_in": 0.00,
+    "label_width_in": 2.63,
+    "label_height_in": 1.00
+  },
+  "elements": [
+    {
+      "type": "text",
+      "field": "name",
+      "x_in": 0.16,
+      "y_in": 0.12,
+      "width_in": 2.28,
+      "height_in": 0.28,
+      "font_name": "Helvetica-Bold",
+      "font_size_pt": 10.00
+    },
+    {
+      "type": "text",
+      "template": "{address_1}\n{address_2}",
+      "x_in": 0.16,
+      "y_in": 0.43,
+      "width_in": 2.28,
+      "height_in": 0.31,
+      "font_size_pt": 8.00
+    },
+    {
+      "type": "barcode",
+      "field": "sku",
+      "barcode_type": "code128",
+      "x_in": 0.16,
+      "y_in": 0.71,
+      "width_in": 1.97,
+      "height_in": 0.24
+    }
+  ]
+}

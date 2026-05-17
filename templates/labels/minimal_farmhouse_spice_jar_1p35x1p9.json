@@ -1,0 +1,65 @@
+{
+  "name": "minimal-farmhouse-spice-jar-1p35x1p9",
+  "page": {
+    "width_in": 1.35,
+    "height_in": 1.90
+  },
+  "grid": {
+    "rows": 1,
+    "cols": 1,
+    "margin_left_in": 0.00,
+    "margin_top_in": 0.00,
+    "margin_right_in": 0.00,
+    "margin_bottom_in": 0.00,
+    "gap_x_in": 0.00,
+    "gap_y_in": 0.00,
+    "label_width_in": 1.35,
+    "label_height_in": 1.90
+  },
+  "elements": [
+    {
+      "type": "text",
+      "field": "name",
+      "x_in": 0.13,
+      "y_in": 0.24,
+      "width_in": 1.09,
+      "height_in": 0.56,
+      "font_name": "Helvetica",
+      "font_size_pt": 16.50,
+      "leading_pt": 17.00,
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "field": "category",
+      "x_in": 0.13,
+      "y_in": 1.20,
+      "width_in": 1.09,
+      "height_in": 0.14,
+      "font_name": "Helvetica",
+      "font_size_pt": 7.50,
+      "leading_pt": 8.00,
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "field": "descriptor",
+      "x_in": 0.10,
+      "y_in": 1.45,
+      "width_in": 1.15,
+      "height_in": 0.20,
+      "font_name": "Helvetica",
+      "font_size_pt": 9.75,
+      "leading_pt": 10.25,
+      "align": "center"
+    }
+  ],
+  "metadata": {
+    "derived_from": "reference image supplied in chat",
+    "reference_dimensions": {
+      "width_in": 1.35,
+      "height_in": 1.90
+    },
+    "notes": "Approximation of the minimalist farmhouse spice label style; divider lines are omitted because templates currently support only text, barcode, and image elements."
+  }
+}

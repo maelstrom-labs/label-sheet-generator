@@ -1,0 +1,12 @@
+.pytest_cache/
+__pycache__/
+.coverage
+.mypy_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+frontend/node_modules/
+frontend/.vite/
+*.egg-info/
+*.pdf

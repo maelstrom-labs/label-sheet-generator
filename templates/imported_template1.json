@@ -1,0 +1,27 @@
+{
+  "page": {
+    "width_mm": 215.90,
+    "height_mm": 279.40
+  },
+  "grid": {
+    "rows": 4,
+    "cols": 2,
+    "margin_left_mm": 21.59,
+    "margin_top_mm": 25.40,
+    "margin_right_mm": 21.59,
+    "margin_bottom_mm": 25.45,
+    "gap_x_mm": 20.32,
+    "gap_y_mm": 8.45,
+    "label_width_mm": 76.20,
+    "label_height_mm": 50.80
+  },
+  "elements": [],
+  "name": "AveryWePrint2.000x3.000RectangleLabels",
+  "metadata": {
+    "imported_from": "AveryWePrint2.000x3.000RectangleLabels.pdf",
+    "import_source_format": "pdf",
+    "auto_detected": true,
+    "auto_detected_method": "curves",
+    "preset_code": null
+  }
+}

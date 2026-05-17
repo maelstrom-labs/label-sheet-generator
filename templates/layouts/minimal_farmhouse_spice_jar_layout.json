@@ -1,0 +1,46 @@
+{
+  "template_type": "text-layout",
+  "name": "minimal-farmhouse-spice-jar-layout",
+  "elements": [
+    {
+      "type": "text",
+      "field": "name",
+      "x_in": 0.13,
+      "y_in": 0.24,
+      "width_in": 1.09,
+      "height_in": 0.56,
+      "font_name": "Helvetica",
+      "font_size_pt": 16.50,
+      "leading_pt": 17.00,
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "field": "category",
+      "x_in": 0.13,
+      "y_in": 1.20,
+      "width_in": 1.09,
+      "height_in": 0.14,
+      "font_name": "Helvetica",
+      "font_size_pt": 7.50,
+      "leading_pt": 8.00,
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "field": "descriptor",
+      "x_in": 0.10,
+      "y_in": 1.45,
+      "width_in": 1.15,
+      "height_in": 0.20,
+      "font_name": "Helvetica",
+      "font_size_pt": 9.75,
+      "leading_pt": 10.25,
+      "align": "center"
+    }
+  ],
+  "metadata": {
+    "derived_from": "reference image supplied in chat",
+    "notes": "Use with any label sheet geometry when you want the same centered spice-jar layout."
+  }
+}

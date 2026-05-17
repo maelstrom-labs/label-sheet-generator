@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "label-sheet-generator"
+version = "0.1.0"
+description = "Generate printable label sheets as PDFs from structured templates and data."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Maelstrom Labs" }
+]
+dependencies = [
+  "pdfplumber>=0.11.5",
+  "pypdf>=5.4.0",
+  "reportlab>=4.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28.1",
+  "pytest>=8.3.5",
+]
+ui = [
+  "fastapi>=0.115.0",
+  "pypdfium2>=4.30.0",
+  "python-multipart>=0.0.9",
+  "uvicorn>=0.34.0",
+]
+
+[project.scripts]
+label-sheet = "label_sheet_generator.cli:main"
+label-sheet-ui = "label_sheet_generator.web_launcher:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/label_sheet_generator"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

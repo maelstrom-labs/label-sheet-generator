@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Ada Lovelace",
+    "address_1": "12 Analytical Engine Way",
+    "address_2": "London",
+    "sku": "AL-1001"
+  },
+  {
+    "name": "Grace Hopper",
+    "address_1": "1700 Compiler Lane",
+    "address_2": "Arlington, VA",
+    "sku": "GH-2002"
+  },
+  {
+    "name": "Katherine Johnson",
+    "address_1": "1 Orbital Mechanics Plaza",
+    "address_2": "Hampton, VA",
+    "sku": "KJ-3003"
+  }
+]
