@@ -144,11 +144,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     ui_parser = subparsers.add_parser(
         "ui",
-        help="launch the FastAPI web UI backend",
+        help="launch the Streamlit web UI",
     )
-    ui_parser.add_argument("--host", default="127.0.0.1", help="host interface for the web UI backend")
-    ui_parser.add_argument("--port", type=int, default=8000, help="port for the web UI backend")
-    ui_parser.add_argument("--reload", action="store_true", help="reload the backend when Python files change")
+    ui_parser.add_argument("--host", default="127.0.0.1", help="host interface for the web UI")
+    ui_parser.add_argument("--port", type=int, default=8501, help="port for the web UI")
 
     return parser
 
@@ -270,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command in {"list-templates", "list-presets"}:
             return _run_list_templates()
         if args.command == "ui":
-            return launch_web_ui(host=args.host, port=args.port, reload=args.reload)
+            return launch_web_ui(host=args.host, port=args.port)
     except TemplateError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

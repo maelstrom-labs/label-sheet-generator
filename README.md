@@ -32,18 +32,27 @@ For development:
 python -m pip install -e '.[dev]'
 ```
 
-For the FastAPI web backend and React frontend:
+For the interactive Streamlit web interface:
 
 ```bash
 python -m pip install -e '.[ui]'
 ```
 
-Then install the React/Vite client:
+### Launching the Web Interface
+
+Launch the Streamlit app:
 
 ```bash
-cd frontend
-npm install
+label-sheet-ui
 ```
+
+or equivalently:
+
+```bash
+label-sheet ui
+```
+
+The UI opens at `http://127.0.0.1:8501` with template pickers, page settings, a JSON data editor with CSV/JSON import, a live rendered preview, and a PDF download button. It uses the same Python rendering pipeline as the CLI, so template selection and output stay consistent.
 
 Templates now support two local categories under `templates/`:
 
@@ -74,32 +83,10 @@ Render a label template with a separate text layout template:
 label-sheet generate imported_template2 out.pdf --layout-template basic_address_layout --records examples/basic_records.json
 ```
 
-Launch the FastAPI web backend:
-
-```bash
-label-sheet ui
-```
-
-Or run the dedicated launcher directly:
+Launch the web UI:
 
 ```bash
 label-sheet-ui
-```
-
-During frontend development, run Vite in a second terminal:
-
-```bash
-cd frontend
-npm run dev
-```
-
-To serve the built React app from the Python backend, build it first:
-
-```bash
-cd frontend
-npm run build
-cd ..
-label-sheet ui
 ```
 
 Render a single page using static values embedded in the template:
@@ -216,18 +203,17 @@ For `text` elements, layout templates support `align` values of `left`, `center`
 
 ## Web Frontend
 
-The FastAPI + React/Vite UI lets you:
+The Streamlit UI lets you:
 
-- work in a dark three-panel desktop workspace for templates, data input, and preview
 - select a label template and optionally layer on a text layout template
 - override page margins, output orientation, page rotation, and text rotation before exporting
 - start the data editor with a JSON document seeded from the detected template schema
 - import label data from JSON or CSV, with CSV converted into the JSON document format used by the UI
-- edit structured label data in a monospaced JSON editor in the browser
+- edit structured label data in a plain-text JSON editor in the browser
 - preview the first page from the same Python rendering pipeline used by the CLI
 - download the current workspace as a print-ready PDF
 
-The web UI uses the same rendering code as the CLI, so template selection and output stay consistent.
+The web UI uses the same rendering code as the CLI, so template selection and output stay consistent. A minimal FastAPI JSON API (`label_sheet_generator.web_api`) is also available for automation and tests, independent of the Streamlit UI.
 
 ## Template format
 

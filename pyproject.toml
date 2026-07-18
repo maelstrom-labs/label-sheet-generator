@@ -16,6 +16,7 @@ dependencies = [
   "pdfplumber>=0.11.5",
   "pypdf>=5.4.0",
   "reportlab>=4.4.0",
+  "pillow>=10.4.0",
 ]
 
 [project.optional-dependencies]
@@ -24,10 +25,11 @@ dev = [
   "pytest>=8.3.5",
 ]
 ui = [
-  "fastapi>=0.115.0",
-  "pypdfium2>=4.30.0",
+  "streamlit>=1.38.0",
+  "uvicorn>=0.30.0",
+  "fastapi>=0.110.0",
   "python-multipart>=0.0.9",
-  "uvicorn>=0.34.0",
+  "pypdfium2>=4.30.0",
 ]
 
 [project.scripts]

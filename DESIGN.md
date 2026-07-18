@@ -1,50 +1,40 @@
 # Label Sheet Generator - Design & Architecture
 
-This document outlines the design system, user interface architecture, and styling techniques used in the Label Sheet Generator's web application. 
+This document outlines the design system, user interface architecture, and styling techniques used in the Label Sheet Generator's web application.
 
 ## 1. Overview
-The application uses **Streamlit** as its core web framework. However, to break away from the default Streamlit appearance and achieve a highly polished, professional "Stitch-inspired" interface, the app employs extensive custom CSS injection. The result is a modern, responsive, two-pane workspace with a persistent sidebar, native-feeling panels, and dynamic theming.
+The application uses **Streamlit** as its web framework. Streamlit renders the entire workspace from a single Python script (`streamlit_app.py`) that calls directly into the shared `label_sheet_generator.workspace` rendering pipeline, keeping the UI streamlined, modern, and simple to maintain. A minimal FastAPI JSON API (`web_api.py`) remains available separately for automation and tests, but it is not the interactive UI.
 
 ## 2. Design System & Theming
 
-The application implements a custom token-based design system featuring two primary modes:
-*   **Deep-Ocean (Dark Mode)**: A sleek, low-contrast dark theme using deep blues (`#0c1626`), cyan accents (`#19b7d9`), and subtle radial gradients to provide depth.
-*   **Mist (Light Mode)**: A clean, high-contrast light theme using crisp whites, light slate grays, and bold blue-cyan accents.
-
-### CSS Injection Strategy
-Themes are applied by injecting dynamic CSS directly into the Streamlit DOM via `st.markdown(..., unsafe_allow_html=True)`.
-
-The `THEME_PALETTES` dictionary in `streamlit_app.py` defines the color tokens for both modes. These tokens are mapped to CSS variables (e.g., `--app-bg`, `--panel-bg`, `--accent-primary`) globally within the `:root` scope.
-
-### Overriding Streamlit Defaults
-To seamlessly integrate the design system, specific Streamlit `[data-testid="..."]` DOM elements are targeted and overridden:
-*   **Backgrounds**: `[data-testid="stAppViewContainer"]` receives custom linear and radial gradients.
-*   **Sidebar**: `[data-testid="stSidebar"]` is restyled with a custom width, borders, and gradient backgrounds.
-*   **Inputs & Buttons**: `stFileUploader`, `stTextArea`, `stSelectbox`, and `.stButton` instances are stripped of their default shadows and borders, receiving rounded corners (`14px` - `20px`), custom borders, and matching hover states that align with modern UI libraries.
+The application uses Streamlit's native theming system (`.streamlit/config.toml`) rather than custom CSS overrides:
+*   **Accent color**: A clean blue (`#2563eb`) primary color used for buttons, links, and field-name pills.
+*   **Light, high-contrast base**: White background with a light slate secondary background for sidebar and containers.
+*   **Minimal custom CSS**: A small stylesheet injected via `st.markdown` hides Streamlit's default menu/footer chrome, tightens page padding, and styles field-name "pills" and the empty-preview placeholder. Everything else uses idiomatic Streamlit widgets and layout primitives (no framework-specific component libraries).
 
 ## 3. Workspace Layout
 
-The application is structured into three primary structural zones:
+The application is structured into three primary zones:
 
 ### Sidebar (Controls & Export)
-*   **Brand Header**: A custom HTML block showing the app logo and title.
-*   **Configuration**: Selectors for Label Templates and Text Layouts.
-*   **Page Settings**: Orientation (Portrait/Landscape), Page Rotation, and rendering toggles.
-*   **Export**: The PDF download button sits at the bottom of the sidebar.
+*   **Brand header**: Title and short caption.
+*   **Templates**: Selectboxes for the Label Template and Text Layout.
+*   **Page settings**: Orientation radio (Portrait/Landscape), Page Rotation selectbox, border toggle, and an optional text-rotation override.
+*   **Page margins**: Collapsible expander with Top/Right/Bottom/Left number inputs (mm).
+*   **Filename**: Text input controlling the downloaded PDF's file name.
 
-### Left Pane: Data Input
-*   **Uploader**: A custom-styled dropzone for CSV and JSON files.
-*   **JSON Editor**: Powered by `streamlit_ace`, this provides a syntax-highlighted code editor for the schema and records. It includes a custom "macOS-style" traffic light header to simulate an IDE window.
-*   **Form Actions**: Controls to format JSON, reset the workspace, or manually trigger a render.
+### Left Column: Data
+*   **Uploader**: `st.file_uploader` accepting CSV or JSON, converted to the shared JSON record document format.
+*   **Field pills**: Small badges listing the fields detected in the active template.
+*   **JSON editor**: A plain `st.text_area` bound to session state, with "Format JSON" and "Reset to sample" actions.
+*   **Validation feedback**: Inline `st.error`/`st.warning` messages for JSON parse errors and missing/extra fields.
 
-### Right Pane: Live Preview
-*   **Preview Canvas**: Uses a custom CSS checkerboard background to emulate a design tool's artboard. The generated PDF is converted to a PNG using `pypdfium2` and displayed here.
-*   **Zoom Controls**: Allows visual scaling of the preview image without affecting the actual PDF output.
-*   **Stats Grid**: A dashboard-style metric row displaying the total number of labels, pages, and active technical configurations (e.g., orientation, template name).
+### Right Column: Live Preview
+*   **Preview image**: The first rendered page (PNG) shown via `st.image`, regenerated whenever inputs change.
+*   **Metrics**: `st.metric` cards for label count and page count.
+*   **Technical info**: A bordered container summarizing orientation, rotation, template, and layout.
+*   **Download**: `st.download_button` exporting the full print-ready PDF.
 
-## 4. Technical Workarounds & Known Constraints
+## 4. State Management
 
-*   **Stacking Context**: Streamlit's default stacking context can conflict with full-page background overlays. To achieve the deep-ocean background glows without masking the UI (which initially caused a "black screen" bug), the app applies `isolation: isolate` to the `.stApp` container and pushes the decorative `::before` pseudo-elements back using `z-index: -1`.
-*   **Streamlit Limitations**: 
-    *   Streamlit's internal components (like drop-downs and file uploaders) cannot have their internal HTML structures deeply customized. We rely on CSS attribute targeting and pseudo-classes to style them as closely to the design mockups as possible.
-    *   The download button moves with the sidebar scroll rather than remaining sticky at the absolute bottom viewport edge due to Streamlit's flex layout configurations.
+Streamlit reruns the script top-to-bottom on every interaction. The app keeps a `_template_signature` tuple (label key, layout key) in `st.session_state`; when it changes, the data document and margins are reset to the newly selected template's defaults. All other widgets (page settings, JSON editor, margins) are bound directly to `st.session_state` via their `key=` argument, so edits persist naturally across reruns without extra plumbing.

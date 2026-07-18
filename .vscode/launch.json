@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Label Sheet UI",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5678
+      },
+      "preLaunchTask": "Start Label Sheet UI (debugpy)",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "justMyCode": true
+    },
+    {
+      "name": "Launch Label Sheet UI (direct)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+      "module": "label_sheet_generator.web_launcher",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "args": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8501"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
