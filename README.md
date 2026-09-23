@@ -254,11 +254,26 @@ Report vulnerabilities via a private GitHub security advisory.
 python -m venv .venv && source .venv/bin/activate
 pip install -e '.[dev,web,pdfimport]'
 
-pytest                       # tests
-ruff check src tests         # lint
-mypy                         # types
+pytest                                    # tests
+ruff check src tests && ruff format src tests
+mypy                                      # strict
+python .github/scripts/check_frontend.py  # frontend XSS/CDN gate
 label-sheet serve --port 8000
 ```
+
+### AI assistant instructions
+
+The same contributor guidance — layering rules, the invariants that prevent known
+defects, and house style — is kept in three places, one per tool:
+
+| File | Tool |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | Claude Code (loaded automatically) |
+| [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | GitHub Copilot (loaded automatically) |
+| [`Modelfile`](Modelfile) | Ollama — `ollama create label-sheet -f Modelfile` |
+
+`CLAUDE.md` is the fullest version; the other two are condensed from it. If you change
+one, change the others.
 
 ## License
 

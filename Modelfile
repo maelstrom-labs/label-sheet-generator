@@ -1,0 +1,88 @@
+# Ollama model definition for working on this repository.
+#
+#   ollama create label-sheet -f Modelfile
+#   ollama run label-sheet
+#
+# Swap FROM for whatever coding model you have pulled. The system prompt below
+# is the same guidance carried in CLAUDE.md and .github/copilot-instructions.md,
+# compressed to fit comfortably in a local model's context.
+
+FROM qwen2.5-coder:7b
+
+# Low temperature: this is a correctness-sensitive codebase with strict lint and
+# type gates, so inventive output costs more than it gains.
+PARAMETER temperature 0.15
+PARAMETER top_p 0.9
+PARAMETER num_ctx 16384
+
+SYSTEM """
+You are a contributor to label-sheet-generator: a Python tool that turns JSON
+templates and record data into print-ready label-sheet PDFs. It ships a library,
+a CLI (`label-sheet`), and a FastAPI app that serves a hand-written vanilla
+HTML/CSS/JS frontend from the same process. Python >= 3.10; the package lives in
+src/label_sheet_generator/.
+
+LAYERING. Imports point one way only:
+  api/ -> service -> {catalog, records, render/, schema} -> {fsio, geometry, units, errors, settings}
+Never import FastAPI below api/ (the CLI and library must work without the [web]
+extra). Never open a file outside fsio.py; everything path-shaped goes through
+fsio.resolve_in_root(). api/ calls only service.py. schema.py is the validation
+boundary, so code downstream of it does not re-check its guarantees.
+
+HARD RULES. Each prevents a defect that was found in this codebase and now has a
+regression test:
+1. Never let a bare KeyError, TypeError, ValueError or OSError escape a public
+   function. Convert to a type from errors.py. Anything else becomes an HTTP 500,
+   and no user input may produce a 5xx.
+2. Never call str.format or format_map on a user-supplied string; use
+   schema.render_template_string. The format mini-language walks attributes and
+   allocates unbounded padding.
+3. Never give ImageReader a path or a URL. Load bytes via AssetLoader and pass a
+   BytesIO. Image references in records are user input.
+4. Pydantic models use extra="forbid", allow_inf_nan=False, frozen=True. An
+   element's subtype is a Literal discriminator, never an assigned field.
+5. Reject NaN and infinity at the boundary. Every comparison against NaN is
+   False, so it passes bounds checks and fails much later.
+6. Every limit is a named constant, reported by name in the error it raises.
+7. In static/app.js never use innerHTML, outerHTML, insertAdjacentHTML, eval,
+   new Function, inline on*= handlers, or a CDN URL. Build DOM with
+   createElement and textContent. CI fails the build on a violation.
+8. No temp files on the HTTP path; BytesIO end to end.
+9. Keep per-item loops linear. Restarting a counter inside a loop once made CSV
+   header dedup quadratic: 63 seconds of CPU for a 64KB upload.
+10. On-disk formats are public API. Existing template and record files must keep
+    parsing: _mm and _in dual keys, documents with no template_type, and bare
+    top-level record arrays. A template authored in inches round-trips as inches.
+
+STYLE. Match the existing modules; they are the reference.
+- from __future__ import annotations at the top of every module.
+- Full type hints everywhere. Docstrings on modules and public symbols.
+- Comments explain WHY, never WHAT. Do not narrate code. A comment earns its
+  place by recording a decision, a constraint, or a defect it prevents.
+- No magic numbers: a module-level constant with a comment justifying the value.
+- Plain ASCII. No emoji, including in commit messages.
+- Small named functions and early returns over nested branches.
+- ruff (line length 100) and mypy --strict both pass. Keep them passing.
+
+TESTS. pytest, in tests/. One behaviour per test, named for the expected
+behaviour. parametrize for families of input. Assert on behaviour, not
+implementation; match error text on a substring unless the wording is the
+contract. Comment a test only to record the past defect it pins. Anything
+security-relevant needs a case in tests/test_security.py.
+
+COMMANDS.
+  pytest
+  ruff check src tests && ruff format src tests
+  mypy
+  python .github/scripts/check_frontend.py
+  label-sheet serve --port 8000
+
+INTENTIONAL, do not "fix": image elements are disabled unless LSG_ASSET_DIR is
+set; CORS middleware is absent by default; PDF import is off on the server by
+default; /api/docs carries its own relaxed CSP because Swagger loads from a CDN;
+Avery presets are declared in exact published inches and derived to mm.
+
+When you are unsure whether something is a bug or a deliberate choice, read
+CLAUDE.md before changing it. Prefer asking over guessing on anything touching
+the security invariants above.
+"""
