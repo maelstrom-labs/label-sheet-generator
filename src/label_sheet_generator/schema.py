@@ -57,6 +57,15 @@ MAX_TEXT_LENGTH = 8_000
 MAX_NAME_LENGTH = 200
 MAX_GRID_CELLS = 10_000
 
+#: Nesting depth allowed inside a template's free-form ``metadata``. Pydantic's
+#: JSON serialiser gives up at 255 and raises, which surfaced as an HTTP 500
+#: for a ~1.5KB request body. Nothing legitimate nests anywhere near this.
+MAX_METADATA_DEPTH = 16
+
+#: Total keys and leaves allowed in ``metadata``, so a wide-but-shallow object
+#: cannot substitute for a deep one.
+MAX_METADATA_NODES = 500
+
 #: A field reference inside a ``template`` string, e.g. ``{address_1}``.
 #: Deliberately narrow: no attribute access, no indexing, no conversion or
 #: format specs, no auto-numbering. See :func:`parse_field_references`.
@@ -407,6 +416,52 @@ class GridSpec(_Base):
 # --------------------------------------------------------------------------
 
 
+def _validate_metadata(value: dict[str, Any]) -> dict[str, Any]:
+    """Bound the free-form ``metadata`` object.
+
+    It is deliberately open -- callers stash provenance there -- but "open" has
+    to stop short of input that cannot be serialised back out. Unbounded depth
+    and unpaired surrogates both crashed the JSON serialiser and became HTTP
+    500s, so they are rejected here as ordinary validation errors instead.
+    """
+    nodes = 0
+
+    def walk(node: Any, depth: int) -> None:
+        nonlocal nodes
+        nodes += 1
+        if depth > MAX_METADATA_DEPTH:
+            raise ValueError(f"metadata nests deeper than {MAX_METADATA_DEPTH} levels")
+        if nodes > MAX_METADATA_NODES:
+            raise ValueError(f"metadata has more than {MAX_METADATA_NODES} entries")
+        if isinstance(node, dict):
+            for key, item in node.items():
+                if not isinstance(key, str):
+                    raise ValueError("metadata keys must be strings")
+                _check_encodable(key)
+                walk(item, depth + 1)
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                walk(item, depth + 1)
+        elif isinstance(node, str):
+            _check_encodable(node)
+        elif node is not None and not isinstance(node, (int, float, bool)):
+            raise ValueError(
+                f"metadata may only contain text, numbers, booleans, null, "
+                f"objects and arrays, not {type(node).__name__}"
+            )
+
+    walk(value, 0)
+    return value
+
+
+def _check_encodable(text: str) -> None:
+    """Reject unpaired surrogates, which cannot be encoded back to UTF-8."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("metadata contains an unpaired surrogate character") from exc
+
+
 class LabelTemplate(_Base):
     """A full sheet definition: page size, grid, and the elements per label."""
 
@@ -416,6 +471,11 @@ class LabelTemplate(_Base):
     grid: GridSpec
     elements: list[Element] = Field(default_factory=list, max_length=MAX_ELEMENTS)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata")
+    @classmethod
+    def _check_metadata(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _validate_metadata(value)
 
     @property
     def units(self) -> Unit:
@@ -448,6 +508,11 @@ class TextLayoutTemplate(_Base):
     name: str | None = Field(default=None, max_length=MAX_NAME_LENGTH)
     elements: list[Element] = Field(default_factory=list, max_length=MAX_ELEMENTS)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata")
+    @classmethod
+    def _check_metadata(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _validate_metadata(value)
 
     @property
     def units(self) -> Unit:

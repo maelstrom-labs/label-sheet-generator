@@ -23,9 +23,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from starlette.types import ASGIApp
 
 from label_sheet_generator import __version__
@@ -50,6 +51,17 @@ from label_sheet_generator.settings import Settings
 logger = logging.getLogger("label_sheet_generator.api")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+#: Swagger UI loads its bundle and stylesheet from jsdelivr and bootstraps with
+#: an inline script. Scoped to /api/docs only -- see swagger_docs().
+_DOCS_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; "
+    "connect-src 'self'; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -83,7 +95,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         description="Generate print-ready label sheet PDFs from JSON templates and records.",
         lifespan=lifespan,
-        docs_url="/api/docs",
+        # The built-in docs route is replaced below so it can carry its own
+        # relaxed CSP; the app's own pages keep the strict one.
+        docs_url=None,
         redoc_url=None,
         openapi_url="/api/openapi.json",
     )
@@ -93,6 +107,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(router, prefix="/api")
+
+    @app.get("/api/docs", include_in_schema=False)
+    async def swagger_docs() -> Response:
+        """Swagger UI, served with a CSP that permits its CDN assets.
+
+        This is the one page in the app that needs the network: bundling
+        swagger-ui would add roughly a megabyte of vendored JavaScript to a
+        wheel whose whole point is to be small. The relaxation is scoped to
+        this route, so the tool's own pages keep the strict policy, and the
+        machine-readable contract at /api/openapi.json works offline either
+        way.
+        """
+        html = get_swagger_ui_html(
+            openapi_url="/api/openapi.json",
+            title="Label Sheet Generator - API",
+        ).body
+        return HTMLResponse(
+            content=html,
+            headers={"Content-Security-Policy": _DOCS_CSP},
+        )
 
     if STATIC_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

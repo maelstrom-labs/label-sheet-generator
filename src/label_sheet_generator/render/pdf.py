@@ -26,6 +26,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from reportlab.pdfbase.pdfdoc import PDFArray
 from reportlab.pdfgen import canvas as pdf_canvas
 
 from label_sheet_generator.assets import AssetLoader
@@ -246,6 +247,8 @@ def render_pdf(
         if landscape:
             canvas.restoreState()
         canvas.showPage()
+
+    _pin_media_boxes(canvas, output_width_pt, output_height_pt)
 
     try:
         canvas.save()
@@ -495,3 +498,27 @@ def _draw_bleed_guide(canvas: pdf_canvas.Canvas, slot: Slot, inset_pt: float) ->
         )
     finally:
         canvas.restoreState()
+
+
+def _pin_media_boxes(canvas: pdf_canvas.Canvas, width_pt: float, height_pt: float) -> None:
+    """Fix each page's MediaBox to the space the content was drawn into.
+
+    ReportLab derives the MediaBox at serialisation time as::
+
+        self.MediaBox = self.MediaBox or PDFArray(
+            self.Rotate in (90, 270) and [0, 0, pageheight, pagewidth]
+            or [0, 0, pagewidth, pageheight])
+
+    so a 90 or 270 degree ``/Rotate`` silently swaps the box while the content
+    stream keeps the original coordinate space. On US Letter that clips
+    everything above y=595.28pt -- two whole rows of a 10-row sheet vanished,
+    with no error anywhere.
+
+    ``/Rotate`` is only meant to tell the viewer which way up to show the page;
+    it must not change the page's dimensions. Assigning MediaBox before save
+    takes the documented ``self.MediaBox or ...`` short-circuit, so the value
+    below wins and the swap never runs.
+    """
+    box = [0, 0, width_pt, height_pt]
+    for page in canvas._doc.Pages.pages:
+        page.MediaBox = PDFArray(box)

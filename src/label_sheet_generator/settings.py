@@ -97,6 +97,11 @@ class Settings:
     max_output_bytes: int = 32 * 1024 * 1024
     max_asset_bytes: int = 4 * 1024 * 1024
     max_asset_pixels: int = 40_000_000
+    #: Pixels in one rasterised preview. Each one costs about 4 bytes of RGBA
+    #: plus a PIL copy, so 8M is roughly 32MB of transient peak per in-flight
+    #: preview -- affordable on a 512MB container at the default concurrency,
+    #: and still sharper than any screen needs for a Letter page.
+    max_preview_pixels: int = 8_000_000
     max_field_value_length: int = 4_000
     render_timeout_s: float = 20.0
 
@@ -144,6 +149,7 @@ class Settings:
             max_body_bytes=_env_int("LSG_MAX_BODY_BYTES", 2 * 1024 * 1024, minimum=1024),
             max_upload_bytes=_env_int("LSG_MAX_UPLOAD_BYTES", 2 * 1024 * 1024, minimum=1024),
             max_document_bytes=_env_int("LSG_MAX_DOCUMENT_BYTES", 1024 * 1024, minimum=1024),
+            max_preview_pixels=_env_int("LSG_MAX_PREVIEW_PIXELS", 8_000_000, minimum=100_000),
             max_records=_env_int("LSG_MAX_RECORDS", 5_000),
             max_pages=_env_int("LSG_MAX_PAGES", 200),
             max_output_bytes=_env_int("LSG_MAX_OUTPUT_BYTES", 32 * 1024 * 1024, minimum=1024),
@@ -189,6 +195,7 @@ class Settings:
             "max_upload_bytes": self.max_upload_bytes,
             "max_document_bytes": self.max_document_bytes,
             "max_records": self.max_records,
+            "max_preview_pixels": self.max_preview_pixels,
             "max_pages": self.max_pages,
             "max_field_value_length": self.max_field_value_length,
             "preview_scale_min": self.preview_scale_min,

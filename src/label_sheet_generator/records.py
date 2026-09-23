@@ -103,6 +103,16 @@ _JSON_OPENERS = ("[", "{")
 #: their spreadsheet.
 HEADER_ROW_NUMBER = 1
 
+#: Most columns a delimited upload may declare. max_records bounds rows; without
+#: a matching bound on columns a small file can still describe an enormous
+#: table, and every column costs work on every row.
+MAX_COLUMNS = 512
+
+#: Most warnings returned for one parse. A file with thousands of duplicate
+#: headers produced one warning each, and every one was serialised into the
+#: response -- a 64KB upload came back as 3MB. The remainder is summarised.
+MAX_WARNINGS = 100
+
 
 # --------------------------------------------------------------------------
 # Documents
@@ -152,10 +162,40 @@ def _warn(
     *,
     row: int | None = None,
 ) -> None:
+    if len(warnings) >= MAX_WARNINGS:
+        # Record the overflow once, then stop growing. The caller still learns
+        # that more problems exist without the list becoming the response.
+        if len(warnings) == MAX_WARNINGS:
+            warnings.append(
+                {
+                    "code": "warnings_truncated",
+                    "message": (
+                        f"more than {MAX_WARNINGS} problems were found; only the first are listed"
+                    ),
+                }
+            )
+        return
     entry: dict[str, Any] = {"code": code, "message": message}
     if row is not None:
         entry["row"] = row
     warnings.append(entry)
+
+
+def _reject_surrogates(text: str, what: str, *, row: int | None = None) -> str:
+    """Refuse unpaired surrogates.
+
+    ``json.loads`` happily produces them from a ``\\ud800`` escape, but they
+    cannot be encoded back to UTF-8, so one in a record value crashed response
+    serialisation and returned HTTP 500 for what is really bad input.
+    """
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise RecordError(
+            f"{what} contains an unpaired surrogate character, which is not valid text",
+            loc=("records", row) if row is not None else (),
+        ) from exc
+    return text
 
 
 def _check_field_name(
@@ -219,7 +259,7 @@ def _coerce_value(value: Any, *, row: int, field: str, max_value_length: int | N
             f"the maximum is {max_value_length}",
             loc=("records", row - 1, field),
         )
-    return text
+    return _reject_surrogates(text, f"record {row} field {field!r}", row=row - 1)
 
 
 def _format_float(value: float, *, row: int, field: str) -> str:
@@ -515,8 +555,20 @@ def _build_header(
     warnings: list[dict[str, Any]],
 ) -> list[str]:
     """Turn the first row into unique, non-empty column names."""
+    if len(raw_header) > MAX_COLUMNS:
+        raise LimitExceeded(
+            f"the file declares {len(raw_header)} columns; the maximum is {MAX_COLUMNS}",
+            limit_name="max_columns",
+            limit=MAX_COLUMNS,
+            actual=len(raw_header),
+        )
+
     header: list[str] = []
     used: set[str] = set()
+    # Next suffix to try per base name. Restarting the search at 2 for every
+    # duplicate made disambiguation quadratic in the number of repeats: 16,000
+    # identical headers took 63 seconds of CPU for a 64KB upload.
+    next_ordinal: dict[str, int] = {}
 
     for position, raw_cell in enumerate(raw_header, start=1):
         name = (raw_cell or "").strip().lstrip("\ufeff").strip()
@@ -531,9 +583,10 @@ def _build_header(
         if name in used:
             # Suffix rather than overwrite: two columns called "name" hold two
             # columns of real data, and a dict would keep only the last.
-            ordinal = 2
+            ordinal = next_ordinal.get(name, 2)
             while f"{name}_{ordinal}" in used:
                 ordinal += 1
+            next_ordinal[name] = ordinal + 1
             renamed = f"{name}_{ordinal}"
             _warn(
                 warnings,

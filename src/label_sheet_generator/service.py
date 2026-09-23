@@ -13,11 +13,11 @@ concerns, and what keeps FastAPI out of the import graph of everything below.
 from __future__ import annotations
 
 import threading
-import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from label_sheet_generator.assets import AssetLoader
 from label_sheet_generator.catalog import Catalog, CatalogEntry
@@ -91,6 +91,11 @@ class LabelSheetService:
     render semaphore and its thread pool, both of which exist to bound work
     rather than to carry per-request data.
     """
+
+    #: How long a request waits for a free render slot before being shed. Long
+    #: enough to ride out a brief burst, short enough that a queued client gets
+    #: a 503 rather than an apparent hang.
+    SLOT_WAIT_S = 1.0
 
     def __init__(self, settings: Settings, catalog: Catalog) -> None:
         self.settings = settings
@@ -274,9 +279,35 @@ class LabelSheetService:
             )
 
         budget = self.settings.render_timeout_s if timeout_s is None else timeout_s
-        if not self._slots.acquire(timeout=1.0):
+        return cast(RenderResult, self._render_holding_slot(plan, options, budget))
+
+    def _render_holding_slot(
+        self,
+        plan: RenderPlan,
+        options: RenderOptions,
+        budget: float,
+        after: Callable[[RenderResult], Any] | None = None,
+    ) -> Any:
+        """Render under one concurrency slot, optionally post-processing it.
+
+        ``after`` runs while the slot is still held. Preview rasterisation uses
+        it so the bitmap allocation counts against the same bound as the render
+        that produced it; doing it outside took a 512MB container to 544MB on
+        16 concurrent previews.
+
+        On timeout the slot is NOT released here. ``Future.cancel()`` returns
+        False once a task is running -- CPython cannot interrupt a thread
+        mid-render -- so releasing it would hand a slot to the next caller
+        while the abandoned render still burns a worker, and one oversized
+        request could then 503 every request behind it. Ownership transfers to
+        the running task instead, and a done-callback releases it when the
+        worker genuinely stops.
+        """
+        if not self._slots.acquire(timeout=self.SLOT_WAIT_S):
             raise Overloaded(retry_after=max(1, int(budget)))
 
+        # Local, not an attribute: concurrent callers must not share this.
+        release_here = True
         try:
             future = self._pool.submit(
                 render_pdf,
@@ -287,19 +318,24 @@ class LabelSheetService:
                 max_pages=self.settings.max_pages,
                 max_output_bytes=self.settings.max_output_bytes,
             )
-            started = time.monotonic()
             try:
-                return future.result(timeout=budget)
-            except TimeoutError as exc:
+                result = future.result(timeout=budget)
+            except FuturesTimeoutError as exc:
+                # 3.11 aliased this to the builtin TimeoutError; on 3.10 it is
+                # a distinct class, and catching only the builtin let it escape
+                # as a 500 instead of a 503.
                 future.cancel()
+                release_here = False
+                future.add_done_callback(lambda _: self._slots.release())
                 raise RenderTimeout(
-                    f"rendering exceeded the {budget:.0f}s budget; "
-                    "reduce the record count and try again"
+                    f"rendering exceeded the {budget:.1f}s budget; "
+                    "reduce the record count and try again",
+                    retry_after=max(1, int(budget)),
                 ) from exc
-            finally:
-                del started
+            return result if after is None else after(result)
         finally:
-            self._slots.release()
+            if release_here:
+                self._slots.release()
 
     def preview_png(
         self,
@@ -314,8 +350,20 @@ class LabelSheetService:
         clamped = min(
             max(requested, self.settings.preview_scale_min), self.settings.preview_scale_max
         )
-        result = self.render(plan, options)
-        return render_page_png(result.pdf_bytes, page=page, scale=clamped)
+        return cast(
+            bytes,
+            self._render_holding_slot(
+                plan,
+                options,
+                self.settings.render_timeout_s,
+                after=lambda result: render_page_png(
+                    result.pdf_bytes,
+                    page=page,
+                    scale=clamped,
+                    max_pixels=self.settings.max_preview_pixels,
+                ),
+            ),
+        )
 
     # -- Examples --------------------------------------------------------
 

@@ -102,8 +102,13 @@ def register_exception_handlers(app: FastAPI) -> None:
             for key, value in exc.to_dict().items()
             if key in {"limit_name", "limit", "actual", "loc", "record_index", "element_index"}
         }
-        if status >= SERVER_ERROR_THRESHOLD:
-            logger.exception("configuration or internal domain error", exc_info=exc)
+        if isinstance(exc, (Overloaded, RenderTimeout)):
+            # Load shedding is the system working, not failing. Logging it at
+            # ERROR with a traceback buried real faults in ~2KB of noise per
+            # shed request.
+            logger.warning("shedding load", extra={"code": exc.code, "path": request.url.path})
+        elif status >= SERVER_ERROR_THRESHOLD:
+            logger.exception("internal domain error", exc_info=exc)
         return JSONResponse(
             status_code=status,
             content=error_body(

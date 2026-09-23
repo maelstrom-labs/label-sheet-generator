@@ -173,9 +173,17 @@ class RenderError(LabelSheetError):
 
 
 class RenderTimeout(RenderError):
-    """A render exceeded its wall-clock budget. HTTP 503."""
+    """A render exceeded its wall-clock budget. HTTP 503 + Retry-After.
+
+    Carries ``retry_after`` because this is load shedding, not a fault: the
+    caller should be told when to come back rather than left to guess.
+    """
 
     code = "render_timeout"
+
+    def __init__(self, message: str, *, retry_after: int = 5, loc: Loc = ()) -> None:
+        super().__init__(message, loc=loc)
+        self.retry_after = retry_after
 
 
 class Overloaded(LabelSheetError):

@@ -52,6 +52,11 @@ MIN_FONT_SIZE_PT = 4.0
 #: re-wrap.
 FONT_SHRINK_STEP_PT = 0.5
 
+#: Bisection steps when shrinking. 11 halvings resolve the full 4pt-1000pt
+#: range to finer than FONT_SHRINK_STEP_PT, so this is a safety stop rather
+#: than a real constraint.
+MAX_SHRINK_ATTEMPTS = 12
+
 #: Line spacing applied when the element does not declare its own leading.
 #: Matches ReportLab's own default ratio.
 DEFAULT_LEADING_RATIO = 1.2
@@ -327,14 +332,7 @@ def _fit_to_box(
         )
 
     if element.overflow == "shrink":
-        font_size_pt = element.font_size_pt
-        while font_size_pt - FONT_SHRINK_STEP_PT >= MIN_FONT_SIZE_PT:
-            font_size_pt -= FONT_SHRINK_STEP_PT
-            paragraph = _build_paragraph(text, element, font_name, font_size_pt)
-            rendered_height_pt = _wrapped_height_pt(paragraph, layout_width_pt, layout_height_pt)
-            if rendered_height_pt <= layout_height_pt:
-                break
-        return paragraph, rendered_height_pt
+        return _shrink_to_box(text, element, font_name, layout_width_pt, layout_height_pt)
 
     return _truncate_to_box(text, element, font_name, layout_width_pt, layout_height_pt)
 
@@ -374,3 +372,43 @@ def _truncate_to_box(
         paragraph = _build_paragraph(TRUNCATION_SUFFIX, element, font_name, element.font_size_pt)
         return paragraph, _wrapped_height_pt(paragraph, layout_width_pt, layout_height_pt)
     return best
+
+
+def _shrink_to_box(
+    text: str,
+    element: TextElement,
+    font_name: str,
+    layout_width_pt: float,
+    layout_height_pt: float,
+) -> tuple[Paragraph, float]:
+    """Find the largest font size that fits, by bisection.
+
+    Wrapped height is monotone in font size, so the fit can be bisected. The
+    original loop stepped down 0.5pt at a time and re-wrapped the whole
+    paragraph each step: from the schema's maximum of 1000pt that is ~2000
+    wraps, and a single 8000-character element took nearly three minutes.
+    Bisection needs about eleven.
+    """
+    low = MIN_FONT_SIZE_PT
+    high = element.font_size_pt
+    best: tuple[Paragraph, float] | None = None
+
+    for _ in range(MAX_SHRINK_ATTEMPTS):
+        if high - low < FONT_SHRINK_STEP_PT:
+            break
+        middle = (low + high) / 2.0
+        paragraph = _build_paragraph(text, element, font_name, middle)
+        height_pt = _wrapped_height_pt(paragraph, layout_width_pt, layout_height_pt)
+        if height_pt <= layout_height_pt:
+            best = (paragraph, height_pt)
+            low = middle
+        else:
+            high = middle
+
+    if best is not None:
+        return best
+
+    # Nothing down to the floor fits; render at the floor and let the caller's
+    # clip keep it inside the box rather than returning nothing at all.
+    paragraph = _build_paragraph(text, element, font_name, MIN_FONT_SIZE_PT)
+    return paragraph, _wrapped_height_pt(paragraph, layout_width_pt, layout_height_pt)

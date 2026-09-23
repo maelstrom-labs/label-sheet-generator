@@ -430,8 +430,23 @@ def _run_serve(args: argparse.Namespace) -> int:
     if args.host:
         os.environ["LSG_HOST"] = args.host
     if args.port:
+        # PORT, not LSG_PORT: the platform variable wins in Settings, and every
+        # host the README recommends sets it -- so writing only LSG_PORT meant
+        # an explicit --port was silently ignored exactly where it is typed.
+        os.environ["PORT"] = str(args.port)
         os.environ["LSG_PORT"] = str(args.port)
-    from label_sheet_generator.api.app import run  # noqa: PLC0415
+
+    try:
+        from label_sheet_generator.api.app import run  # noqa: PLC0415
+    except ImportError:
+        # The api package imports FastAPI at module level, so this is where a
+        # missing extra actually surfaces; the guard inside run() is too late.
+        print(
+            "error: the web interface needs extra dependencies. Install them with\n"
+            "  pip install 'label-sheet-generator[web]'",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
 
     return run()
 

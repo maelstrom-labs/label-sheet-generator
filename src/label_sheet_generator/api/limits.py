@@ -15,6 +15,14 @@ from dataclasses import dataclass
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+#: Most forwarded hops considered. A client can prepend arbitrarily many
+#: entries; keeping only the tail bounds both the work and the key length.
+MAX_FORWARDED_HOPS = 16
+
+#: Bound on a bucket-map key, which is attacker-influenced when a proxy is
+#: trusted. Comfortably longer than any IPv6 address.
+MAX_CLIENT_KEY_LENGTH = 64
+
 
 class BodySizeLimitMiddleware:
     """Reject oversized bodies by declared length *and* by actual bytes read.
@@ -52,16 +60,27 @@ class BodySizeLimitMiddleware:
                     return {"type": "http.disconnect"}
             return message
 
-        sent_status: dict[str, int] = {}
+        # Truncating the stream makes the handler fail to parse its body, so it
+        # answers 400 "error parsing the body" -- technically true, but it tells
+        # the caller nothing about the real cause. Swallow that response and
+        # send the 413 instead. Nothing has reached the client yet at this
+        # point, so both the status and the body can still be replaced.
+        swallowed = {"started": False}
 
         async def watching_send(message: Message) -> None:
+            if not counter["tripped"]:
+                await send(message)
+                return
             if message["type"] == "http.response.start":
-                sent_status["status"] = message["status"]
+                swallowed["started"] = True
+                return
+            if message["type"] == "http.response.body" and swallowed["started"]:
+                return
             await send(message)
 
         await self.app(scope, counting_receive, watching_send)
 
-        if counter["tripped"] and not sent_status:  # pragma: no cover - defensive
+        if counter["tripped"]:
             await self._too_large(scope, receive, send, counter["seen"])
 
     async def _too_large(self, scope: Scope, receive: Receive, send: Send, actual: int) -> None:
@@ -161,14 +180,19 @@ def client_key(scope: Scope, *, trusted_proxy_hops: int) -> str:
     """
     if trusted_proxy_hops > 0:
         headers: list[tuple[bytes, bytes]] = scope.get("headers", [])
-        for key, value in headers:
-            if key == b"x-forwarded-for":
-                parts: list[str] = [item.strip() for item in value.decode("latin-1").split(",")]
-                index = len(parts) - trusted_proxy_hops
-                if 0 <= index < len(parts) and parts[index]:
-                    return parts[index]
-                break
+        # RFC 7230 lets a repeated field arrive as several lines, equivalent to
+        # one comma-joined value. Reading only the first line let a client send
+        # its own X-Forwarded-For and have the proxy append a second one, so
+        # every request landed in a different bucket and the limiter did nothing.
+        raw = b",".join(value for key, value in headers if key == b"x-forwarded-for")
+        if raw:
+            parts: list[str] = [
+                item.strip() for item in raw.decode("latin-1", "replace").split(",") if item.strip()
+            ][-MAX_FORWARDED_HOPS:]
+            index = len(parts) - trusted_proxy_hops
+            if 0 <= index < len(parts):
+                return parts[index][:MAX_CLIENT_KEY_LENGTH]
     client = scope.get("client")
     if client:
-        return str(client[0])
+        return str(client[0])[:MAX_CLIENT_KEY_LENGTH]
     return "unknown"
