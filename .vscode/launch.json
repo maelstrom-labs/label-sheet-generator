@@ -1,0 +1,97 @@
+{
+  // Run via `python -m label_sheet_generator` rather than the `label-sheet`
+  // console script so breakpoints bind without the debugger having to follow
+  // an entry-point shim.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Web app (serve)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "label_sheet_generator",
+      "args": ["serve", "--port", "8000"],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "LSG_LOG_LEVEL": "DEBUG"
+      }
+    },
+    {
+      "name": "Web app (auto-reload)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      // Same factory `label-sheet serve` uses. The reloader runs the app in a
+      // child process, so subProcess is what keeps breakpoints working.
+      "args": [
+        "label_sheet_generator.api.app:create_app",
+        "--factory",
+        "--reload",
+        "--reload-dir",
+        "${workspaceFolder}/src",
+        "--port",
+        "8000"
+      ],
+      "subProcess": true,
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "LSG_LOG_LEVEL": "DEBUG"
+      }
+    },
+    {
+      "name": "CLI: generate sample PDF",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "label_sheet_generator",
+      // Writes to the repo root, where /*.pdf is gitignored.
+      "args": [
+        "generate",
+        "labels/basic-address",
+        "${workspaceFolder}/sample.pdf",
+        "--records",
+        "${workspaceFolder}/src/label_sheet_generator/data/examples/basic-address.json",
+        "--borders",
+        "--force"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "CLI: list-templates",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "label_sheet_generator",
+      "args": ["list-templates"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "CLI: custom arguments",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "label_sheet_generator",
+      "args": "${command:pickArgs}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Current file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      // Picked up by the Test Explorer's "Debug Test". justMyCode is off so
+      // you can step into ReportLab and Pydantic, where most surprises live.
+      "name": "Debug tests",
+      "type": "debugpy",
+      "request": "launch",
+      "purpose": ["debug-test"],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}

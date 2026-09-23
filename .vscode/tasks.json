@@ -1,0 +1,58 @@
+{
+  // The same gates CI runs, so "CI: all checks" passing locally means the
+  // push will not bounce on lint, types or the frontend/AI-docs scripts.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pytest",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m pytest",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "pytest (coverage)",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m pytest --cov --cov-report=term-missing --cov-fail-under=80",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "ruff check",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m ruff check src tests",
+      "problemMatcher": []
+    },
+    {
+      "label": "ruff format",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m ruff format src tests",
+      "problemMatcher": []
+    },
+    {
+      "label": "mypy",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m mypy",
+      "problemMatcher": []
+    },
+    {
+      "label": "check frontend",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} .github/scripts/check_frontend.py",
+      "problemMatcher": []
+    },
+    {
+      "label": "check AI docs",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} .github/scripts/check_ai_docs.py",
+      "problemMatcher": []
+    },
+    {
+      "label": "CI: all checks",
+      "dependsOrder": "sequence",
+      "dependsOn": ["ruff check", "mypy", "check frontend", "check AI docs", "pytest (coverage)"],
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}
