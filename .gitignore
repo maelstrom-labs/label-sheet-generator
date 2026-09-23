@@ -10,3 +10,4 @@ frontend/node_modules/
 frontend/.vite/
 *.egg-info/
 *.pdf
+.DS_Store
