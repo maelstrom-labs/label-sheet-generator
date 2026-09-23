@@ -20,6 +20,7 @@ pytest tests/test_security.py            # the regression suite for past CVEs-in
 ruff check src tests && ruff format src tests
 mypy                                     # strict, and it passes - keep it that way
 python .github/scripts/check_frontend.py # XSS/CDN gate on the frontend
+python .github/scripts/check_ai_docs.py  # this file, Copilot's and the Modelfile agree
 
 label-sheet serve --port 8000            # the web app
 label-sheet list-templates               # see the catalog
@@ -27,6 +28,11 @@ label-sheet list-templates               # see the catalog
 
 CI runs all of the above across 3.10-3.13, plus a wheel install into a clean venv and a
 container build. Coverage gate is 80% (currently ~87%).
+
+The same guidance lives in `.github/copilot-instructions.md` and `Modelfile` for other
+tools. `check_ai_docs.py` fails the build if a shared rule is stated in one of the three
+and not the others, or if any of them names a module or symbol that no longer exists.
+**If you change a rule here, change it in the other two.**
 
 ## Architecture
 

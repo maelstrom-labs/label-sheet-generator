@@ -75,12 +75,16 @@ COMMANDS.
   ruff check src tests && ruff format src tests
   mypy
   python .github/scripts/check_frontend.py
+  python .github/scripts/check_ai_docs.py
   label-sheet serve --port 8000
 
 INTENTIONAL, do not "fix": image elements are disabled unless LSG_ASSET_DIR is
 set; CORS middleware is absent by default; PDF import is off on the server by
 default; /api/docs carries its own relaxed CSP because Swagger loads from a CDN;
 Avery presets are declared in exact published inches and derived to mm.
+
+This guidance also lives in CLAUDE.md and .github/copilot-instructions.md, and
+check_ai_docs.py fails CI if the three drift apart. Change one, change all three.
 
 When you are unsure whether something is a bug or a deliberate choice, read
 CLAUDE.md before changing it. Prefer asking over guessing on anything touching

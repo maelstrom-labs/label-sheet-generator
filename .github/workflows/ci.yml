@@ -24,9 +24,9 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip && pip install -e '.[dev,web,pdfimport]'
       - name: ruff
-        run: ruff check src tests
+        run: ruff check src tests .github/scripts
       - name: ruff format
-        run: ruff format --check src tests
+        run: ruff format --check src tests .github/scripts
       - name: mypy
         run: mypy
 
@@ -39,6 +39,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: no innerHTML / eval / inline handlers
         run: python .github/scripts/check_frontend.py
+
+  ai-docs:
+    # CLAUDE.md, the Copilot instructions and the Ollama Modelfile say the same
+    # things three times over. A stale instruction file is worse than none --
+    # every assistant that reads one starts from a false picture of the code.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip && pip install -e '.[dev,web,pdfimport]'
+      - name: instruction files are in step and name only real symbols
+        run: python .github/scripts/check_ai_docs.py
 
   test:
     runs-on: ubuntu-latest

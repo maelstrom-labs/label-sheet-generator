@@ -65,6 +65,13 @@ arrays. A template authored in inches must round-trip as inches.
 Comment a test only to record the past defect it pins. Security-relevant changes need a
 case in `tests/test_security.py`.
 
+## Keeping this file in step
+
+The same guidance lives in `CLAUDE.md` (the fullest version) and in the Ollama
+`Modelfile`. CI runs `.github/scripts/check_ai_docs.py`, which fails if a shared rule
+appears in one file and not the others, or if any of them names a symbol that no longer
+exists. Change one, change all three.
+
 ## Commands
 
 ```bash
@@ -72,5 +79,6 @@ pytest
 ruff check src tests && ruff format src tests
 mypy
 python .github/scripts/check_frontend.py
+python .github/scripts/check_ai_docs.py
 label-sheet serve --port 8000
 ```

@@ -273,7 +273,9 @@ defects, and house style — is kept in three places, one per tool:
 | [`Modelfile`](Modelfile) | Ollama — `ollama create label-sheet -f Modelfile` |
 
 `CLAUDE.md` is the fullest version; the other two are condensed from it. If you change
-one, change the others.
+one, change the others — CI runs `.github/scripts/check_ai_docs.py`, which fails the
+build if a shared rule appears in one file and not the others, or if any of them names a
+module or symbol that no longer exists.
 
 ## License
 

@@ -96,7 +96,7 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedE
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-src = ["src", "tests"]
+src = ["src", "tests", ".github/scripts"]
 
 [tool.ruff.lint]
 select = [
@@ -127,6 +127,9 @@ ignore = [
   "S101", "S105", "S106", "S108", "SLF001",
   "PLR2004", "PLC0415", "PLE2502", "E501",
 ]
+# CI helper scripts: asserts are the assertion mechanism, and a bare HTTP
+# status code reads better than a named constant for it.
+".github/scripts/*" = ["S101", "PLR2004", "T201"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

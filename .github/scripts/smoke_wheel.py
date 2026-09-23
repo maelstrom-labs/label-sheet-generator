@@ -70,9 +70,15 @@ def main() -> int:
     base = f"http://{HOST}:{port}"
     process = subprocess.Popen(  # noqa: S603
         [
-            sys.executable, "-m", "uvicorn",
+            sys.executable,
+            "-m",
+            "uvicorn",
             "label_sheet_generator.api.app:create_app",
-            "--factory", "--host", HOST, "--port", str(port),
+            "--factory",
+            "--host",
+            HOST,
+            "--port",
+            str(port),
         ],
     )
     try:
