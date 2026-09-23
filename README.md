@@ -12,6 +12,17 @@ and CSV import are built in.
   so a preview in the browser is the PDF you get on disk.
 - **Backward compatible.** The JSON template and record formats are unchanged from 0.x.
 
+> [!NOTE]
+> **Built with AI assistance.** Most of this codebase was written by
+> **Claude Opus 5** working from human direction and review, with one small commit from
+> Claude Sonnet 5. Per-commit attribution is recorded in the `Co-Authored-By:` trailers —
+> `git log --format='%an %s%n%b' | grep -i co-authored-by` shows exactly which commits.
+>
+> The project is held to the gates in [Development](#development): 818 tests, an 80%
+> coverage floor, `ruff`, `mypy --strict`, a security regression suite, and a frontend
+> XSS/CDN check, all run in CI across Python 3.10-3.13. Treat it as you would any
+> dependency — read the code before you trust it with anything that matters.
+
 ## Quick start
 
 ```bash
