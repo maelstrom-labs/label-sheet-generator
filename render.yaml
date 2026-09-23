@@ -1,0 +1,18 @@
+# Render.com blueprint. Free tier: one web service, no database, no disk.
+# Deploy with: https://render.com/deploy?repo=<your fork>
+services:
+  - type: web
+    name: label-sheet-generator
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/livez
+    envVars:
+      - key: LSG_TRUSTED_PROXY_HOPS
+        value: "1"        # Render terminates TLS in front of the container
+      - key: LSG_LOG_LEVEL
+        value: INFO
+      - key: LSG_MAX_RECORDS
+        value: "2000"     # tighter than the default: the free tier has 512MB
+      - key: LSG_MAX_CONCURRENT_RENDERS
+        value: "2"

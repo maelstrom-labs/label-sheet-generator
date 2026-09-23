@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip && pip install -e '.[dev,web,pdfimport]'
+      - name: ruff
+        run: ruff check src tests
+      - name: ruff format
+        run: ruff format --check src tests
+      - name: mypy
+        run: mypy
+
+  frontend-safety:
+    # The frontend renders template names, field names, record values and
+    # server error strings. Any of these reaching innerHTML is an XSS, so the
+    # ban is enforced here rather than left to review.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: no innerHTML / eval / inline handlers
+        run: python .github/scripts/check_frontend.py
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip && pip install -e '.[dev,web,pdfimport]'
+      - name: pytest
+        run: pytest --cov=label_sheet_generator --cov-report=term-missing --cov-fail-under=80
+
+  wheel:
+    # A wheel that imports in a clean venv but cannot find its own templates or
+    # static files is the packaging failure this job exists to catch.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - name: install the wheel into a clean venv and smoke test it
+        run: |
+          set -e
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install "$(ls dist/*.whl)[web]"
+          cd /tmp
+          /tmp/clean/bin/label-sheet --version
+          /tmp/clean/bin/label-sheet list-templates
+          /tmp/clean/bin/label-sheet generate labels/basic-address /tmp/out.pdf
+          test -s /tmp/out.pdf
+          /tmp/clean/bin/python "$GITHUB_WORKSPACE/.github/scripts/smoke_wheel.py"
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: label-sheet-generator:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: run and probe
+        run: |
+          set -e
+          docker run -d --name lsg -p 8000:8000 label-sheet-generator:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/livez >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/api/livez
+          curl -fsS http://127.0.0.1:8000/api/readyz
+          curl -fsS http://127.0.0.1:8000/ -o /dev/null
+          echo "container is serving"
+          docker logs lsg
+          docker rm -f lsg

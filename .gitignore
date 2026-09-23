@@ -9,5 +9,8 @@ dist/
 frontend/node_modules/
 frontend/.vite/
 *.egg-info/
-*.pdf
+/*.pdf
 .DS_Store
+htmlcov/
+.venv*/
+node_modules/

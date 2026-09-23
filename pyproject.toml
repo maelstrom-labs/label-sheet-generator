@@ -4,40 +4,151 @@ build-backend = "hatchling.build"
 
 [project]
 name = "label-sheet-generator"
-version = "0.1.0"
-description = "Generate printable label sheets as PDFs from structured templates and data."
+version = "1.0.0"
+description = "Generate print-ready label sheet PDFs from JSON templates and record data."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [
-  { name = "Maelstrom Labs" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Maelstrom Labs" }]
+keywords = ["labels", "pdf", "avery", "barcode", "reportlab", "printing"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Printing",
+  "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+  "Typing :: Typed",
 ]
 dependencies = [
-  "pdfplumber>=0.11.5",
-  "pypdf>=5.4.0",
-  "reportlab>=4.4.0",
   "pillow>=10.4.0",
+  "pydantic>=2.7.0",
+  "reportlab>=4.0.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-  "httpx>=0.28.1",
-  "pytest>=8.3.5",
-]
-ui = [
-  "streamlit>=1.38.0",
-  "uvicorn>=0.30.0",
+# Everything needed to run the web app. This is what the Dockerfile installs.
+web = [
   "fastapi>=0.110.0",
   "python-multipart>=0.0.9",
   "pypdfium2>=4.30.0",
+  "uvicorn[standard]>=0.30.0",
 ]
+# PDF template import. Optional and off by default on a public instance: it
+# parses untrusted PDFs, which is a much larger attack surface than JSON.
+pdfimport = [
+  "pdfplumber>=0.11.5",
+  "pypdf>=5.4.0",
+]
+dev = [
+  "httpx>=0.28.1",
+  "mypy>=1.11.0",
+  "pytest>=8.3.5",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/maelstrom-labs/label-sheet-generator"
+Source = "https://github.com/maelstrom-labs/label-sheet-generator"
+Issues = "https://github.com/maelstrom-labs/label-sheet-generator/issues"
 
 [project.scripts]
 label-sheet = "label_sheet_generator.cli:main"
-label-sheet-ui = "label_sheet_generator.web_launcher:main"
 
 [tool.hatch.build.targets.wheel]
+# data/ and static/ live inside the package directory, so hatchling ships them
+# with it. The wheel job in CI installs the built artifact into a clean venv
+# and renders a PDF, which is what actually proves they made it in.
 packages = ["src/label_sheet_generator"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "tests/", "README.md", "LICENSE", "pyproject.toml"]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+filterwarnings = [
+  "error",
+  "ignore::DeprecationWarning",
+  # starlette's TestClient warns unless httpx2 is installed; that is a test-rig
+  # concern, not a property of this package.
+  "ignore:Using .httpx. with .starlette.testclient.:Warning",
+]
+
+[tool.coverage.run]
+source = ["label_sheet_generator"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",    # pycodestyle
+  "F",         # pyflakes
+  "I",         # isort
+  "B",         # bugbear
+  "C4",        # comprehensions
+  "UP",        # pyupgrade
+  "S",         # bandit
+  "PTH",       # use pathlib
+  "RET",       # return simplification
+  "SIM",       # simplify
+  "TID",       # tidy imports
+  "PL",        # pylint
+  "RUF",
+]
+ignore = [
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915",  # rendering is legitimately branchy
+  "S101",                                       # asserts are used as invariants in presets
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert against internals, compare against literals, import lazily for
+# per-test isolation, and deliberately construct hostile input -- including
+# bidirectional-override characters in the filename-injection cases.
+"tests/*" = [
+  "S101", "S105", "S106", "S108", "SLF001",
+  "PLR2004", "PLC0415", "PLE2502", "E501",
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src/label_sheet_generator"]
+exclude = ["/numpy/"]
+strict = true
+warn_unreachable = true
+disallow_untyped_defs = true
+no_implicit_reexport = false
+
+[[tool.mypy.overrides]]
+module = ["reportlab.*", "pypdfium2.*", "pdfplumber.*", "pypdf.*", "PIL.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Pillow's stubs reference numpy. numpy is not a dependency of this project;
+# when it happens to be present in a dev environment its stubs use syntax newer
+# than our target version and abort the run, so do not follow into it.
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+ignore_missing_imports = true

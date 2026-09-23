@@ -1,0 +1,32 @@
+{
+  "template_type": "text-layout",
+  "name": "basic-address-layout",
+  "elements": [
+    {
+      "type": "text",
+      "x_mm": 4.0,
+      "y_mm": 3.0,
+      "width_mm": 58.0,
+      "height_mm": 7.0,
+      "field": "name",
+      "font_name": "Helvetica-Bold"
+    },
+    {
+      "type": "text",
+      "x_mm": 4.0,
+      "y_mm": 11.0,
+      "width_mm": 58.0,
+      "height_mm": 8.0,
+      "template": "{address_1}\n{address_2}",
+      "font_size_pt": 8.0
+    },
+    {
+      "type": "barcode",
+      "x_mm": 4.0,
+      "y_mm": 18.0,
+      "width_mm": 50.0,
+      "height_mm": 6.0,
+      "field": "sku"
+    }
+  ]
+}

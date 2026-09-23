@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="system">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Generate print-ready label sheet PDFs from JSON templates and record data. Millimetre or inch geometry, text, barcode and image elements, Avery presets, CSV and JSON import.">
+<title>Label Sheet - print-ready label sheets from JSON</title>
+
+<!--
+  ===========================================================================
+  DOM CONTRACT between this file and static/app.js
+  ---------------------------------------------------------------------------
+  Every node app.js addresses already exists here. app.js resolves a node as
+  document.getElementById(name) || document.querySelector('[data-el="name"]'),
+  so where its vocabulary differs from the semantic id used here, the element
+  carries BOTH: a readable id for humans and CSS, and data-el for app.js.
+  All of its lookups are null-safe, so a removed region degrades to "that
+  feature is absent" rather than a thrown error.
+
+  Nodes whose CHILDREN app.js owns - do not put permanent content in them:
+    #template-list      skeleton cards, grouped radio cards, or an .empty-note
+    #layout-select      option list
+    #broken-templates   a heading plus a list of templates that failed to load
+    #records-table      thead and tbody (the <caption> here is permanent)
+    #field-chips        one chip per field, plus the trailing "unused:" group
+    #validation-strip   one .validation-line per problem
+    #json-gutter        one .gutter__line per line of the editor
+    #sheet-overlay      the geometry-error card and the no-records card
+    #bootstrap-error    .alert__title / .alert__message / .alert__meta + Retry
+    #export-error       .alert__message
+    #toast-region       .toast
+
+  Nodes whose TEXT app.js replaces - these must own no child elements:
+    #status-chip #records-chip #records-summary #sheet-caption #context-summary
+    #version-chip #stat-labels #stat-pages #stat-per-sheet #page-indicator
+    #btn-download #btn-copy-cli #export-reason #import-error
+    #meta-page-line #meta-grid-line #template-search-status #status-live
+
+  id  ->  data-el alias consumed by app.js
+    status-live         -> live-region        bootstrap-error   -> boot-error
+    btn-render-now      -> render-now         btn-preview-retry -> preview-retry
+    btn-open-generator  -> open-generator     template-search-status -> template-search-count
+    meta-page-line      -> template-meta-page meta-grid-line    -> template-meta-grid
+    text-rotation-deg   -> text-rotation      btn-reset-margins -> margins-reset
+    btn-download        -> download-pdf       export-reason     -> export-hint
+    btn-copy-cli        -> copy-cli           btn-page-prev/next-> page-prev/page-next
+    sheet-figure        -> sheet              records           -> records-panel
+    records-chip        -> records-status     file-input        -> import-file
+    btn-import          -> import-records     btn-format-json   -> format-json
+    btn-add-row         -> add-row            btn-clear-records -> clear-records
+    json-gutter         -> records-gutter     json-editor       -> records-json
+    btn-reset-everything-> reset-everything   dlg-reset         -> reset-dialog
+    btn-reset-confirm   -> reset-confirm
+
+  Matching names (no alias needed): masthead, version-chip, status-chip, desk,
+  workspace, theme-toggle, render-progress, context-summary, template-search,
+  layout-select, outline-slots, text-rotation-enabled, filename, export-error,
+  margin-top / margin-right / margin-bottom / margin-left, show-margins,
+  dim-sheet, page-stepper, page-indicator, preview-image, sheet-caption,
+  stat-labels, stat-pages, stat-per-sheet, records-toggle, records-summary,
+  records-body, records-resizer, records-table, records-no-fields-note,
+  import-error, field-chips, validation-strip, tab-table, tab-json,
+  panel-table, panel-json, template-list, broken-templates, sheet-overlay,
+  toast-region.
+
+  Group names app.js reads with querySelectorAll:
+    input[name="label-template"]   the template radio cards it builds
+    input[name="orientation"]      portrait | landscape
+    input[name="page-rotation"]    0 | 90 | 180 | 270
+    input[name="margin-unit"]      mm | in   (display units only)
+    [data-unit-suffix]             the mm/in adornment inside each margin field
+    [data-skeleton]                loading placeholders, toggled during boot
+    .rail-field                    closest() wrapper it hides for a whole field
+
+  State it writes, which the stylesheet reads (never the other way round):
+    html[data-theme]               system | light | dark  (also set pre-paint)
+    html.is-booting                boot in progress
+    #masthead.is-scrolled          bottom rule past 8px of scroll
+    #status-chip[data-status]      idle | rendering | ok | attention | stale
+    #sheet-figure.show-margins     plus --margin-top/right/bottom/left-pct
+    #sheet-figure  style.aspectRatio set from the real page dimensions
+    #preview-image.is-dimmed       dark-mode comfort filter, off by default
+    #records.is-open               plus --records-height
+    .is-drop-target                on #records or #desk during a file drag
+
+  Classes app.js puts on nodes it creates, all styled in app.css:
+    .template-card and .template-card__{input,thumb,body,name,meta,dims,
+      codes,check,warning}, .template-card--skeleton, .template-card-group,
+      .rail-subhead, .code-chip
+    .chip .chip--present .chip--missing .chip--unused .chip__dot .chip__label
+      .chip-group .chip-group--unused .chip-group__label
+    .status-pill .status-pill--{ok,warn,error}
+    .col-num .col-field .col-field__name .col-actions .tag .tag--unused
+      .cell-input
+    .validation-line .validation-line--{error,warning} and __glyph / __text
+    .sheet-overlay__{title,message,actions}
+    .alert__{title,message,meta}, .note-title, .note-list, .gutter__line
+    .toast .toast__message
+    .btn .btn--primary .btn--tertiary .btn--link .btn--icon
+  ===========================================================================
+-->
+
+<link rel="stylesheet" href="/static/app.css">
+
+<!--
+  Theme bootstrap: the ONLY inline script in this document, and the only inline
+  anything. It must run before first paint, otherwise a dark-mode reload flashes
+  a white page. CSP for this app is script-src 'self' with no 'unsafe-inline',
+  so api/app.py MUST allow this exact block by either
+    (a) adding its sha256 hash to script-src, or
+    (b) injecting a per-response nonce attribute on #theme-bootstrap.
+  Failure mode if that is not done: the script is blocked, data-theme stays at
+  the markup default of "system", and nothing else breaks.
+-->
+<script id="theme-bootstrap">
+(function () {
+  try {
+    var t = window.localStorage.getItem("ls.theme");
+    if (t === "light" || t === "dark" || t === "system") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  } catch (e) {
+    /* Storage can throw in private mode or a partitioned iframe; keep the default. */
+  }
+})();
+</script>
+</head>
+
+<body>
+
+<a class="skip-link" id="skip-link" href="#workspace">Skip to the generator</a>
+
+<!-- Icon sprite: only the glyphs this document actually references.
+     Every icon is decorative; the control beside it always carries text
+     or an aria-label, so no meaning is lost if the sprite fails. -->
+<svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5 12 6.5"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5 5.5 8l4 4.5"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5 10.5 8l-4 4.5"/></symbol>
+  <symbol id="i-chevron-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 8 5.5l4 4"/></symbol>
+  <symbol id="i-info" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.75"/><path d="M8 7.4v3.6"/><path d="M8 5.1h.01"/></symbol>
+  <symbol id="i-external-link" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.25 2.75h4v4"/><path d="M13.25 2.75 7.5 8.5"/><path d="M12 9.75v2.75a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 2 12.5v-7A1.5 1.5 0 0 1 3.5 4h2.75"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.15 1.15M11.45 11.45l1.15 1.15M12.6 3.4l-1.15 1.15M4.55 11.45 3.4 12.6"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8 5.6 5.6 0 1 0 13.2 9.6Z"/></symbol>
+  <symbol id="i-contrast" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.75"/><path d="M8 2.25v11.5a5.75 5.75 0 0 0 0-11.5Z" fill="currentColor" stroke="none"/></symbol>
+</svg>
+
+<!-- ===================== masthead ===================== -->
+<header class="masthead" id="masthead">
+  <div class="masthead-inner">
+
+    <div class="masthead-left">
+      <a class="wordmark" href="#top">Label Sheet</a>
+      <span class="version-chip" id="version-chip"></span>
+    </div>
+
+    <div class="masthead-centre">
+      <!-- app.js replaces this element's text and sets data-status; the dot and
+           the word both come from that one attribute, so status is never
+           carried by colour alone. -->
+      <p class="status-chip" id="status-chip" data-status="idle" role="status" aria-live="polite" aria-atomic="true">Ready</p>
+      <button class="btn btn-tertiary btn-sm" id="btn-render-now" data-el="render-now" type="button" hidden>Render</button>
+      <button class="btn btn-tertiary btn-sm" id="btn-preview-retry" data-el="preview-retry" type="button">Re-render</button>
+    </div>
+
+    <nav class="masthead-nav" id="primary-nav" aria-label="Primary">
+      <a class="nav-link" href="#how-it-works">How it works</a>
+      <a class="nav-link" href="#json-format">JSON format</a>
+      <a class="nav-link" href="#cli">CLI</a>
+      <a class="nav-link nav-link-external" href="https://github.com/" target="_blank" rel="noopener noreferrer" aria-label="GitHub (opens in a new tab)">
+        GitHub <svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-external-link"></use></svg>
+      </a>
+    </nav>
+
+    <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Theme: system. Activate for light.">
+      <svg class="icon theme-icon theme-icon-system" aria-hidden="true" focusable="false"><use href="#i-contrast"></use></svg>
+      <svg class="icon theme-icon theme-icon-light" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+      <svg class="icon theme-icon theme-icon-dark" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+    </button>
+
+  </div>
+  <div class="render-progress" id="render-progress" aria-hidden="true" hidden><span class="render-progress-bar"></span></div>
+</header>
+
+<!-- The only always-present live region. The status chip mirrors into it. -->
+<p class="sr-only" id="status-live" data-el="live-region" role="status" aria-live="polite" aria-atomic="true"></p>
+
+<!-- Filled by app.js with .alert__title / .alert__message / .alert__meta and a Retry button. -->
+<div class="alert alert-banner" id="bootstrap-error" data-el="boot-error" hidden></div>
+
+<!-- ===================== hero ===================== -->
+<section class="hero" id="top" aria-labelledby="hero-title">
+  <div class="hero-inner">
+    <h1 class="hero-title" id="hero-title">Print-ready label sheets, from JSON.</h1>
+    <p class="hero-lead">
+      Define a grid in millimetres or inches, drop in your records, export a PDF that
+      lines up with the stock in your printer. Avery presets, barcodes, images, CSV import.
+    </p>
+    <p class="hero-actions">
+      <button class="btn btn-primary" id="btn-open-generator" data-el="open-generator" type="button">Open the generator</button>
+      <a class="link-quiet" href="https://github.com/" target="_blank" rel="noopener noreferrer" aria-label="View on GitHub (opens in a new tab)">View on GitHub &rarr;</a>
+    </p>
+    <p class="hero-meta">No account &middot; Records are processed in memory and discarded &middot; MIT &middot; Python + ReportLab</p>
+  </div>
+</section>
+
+<!-- Read-only summary of the rail, for widths where the rail has scrolled away. -->
+<div class="context-bar" id="context-bar">
+  <span class="context-summary" id="context-summary"></span>
+</div>
+
+<!-- ===================== workspace ===================== -->
+<main class="workspace" id="workspace">
+
+  <!-- ---------- rail ---------- -->
+  <aside class="rail" id="rail" aria-label="Sheet settings">
+    <!-- The rail's sections are h3 so they read as subordinate to the page
+         title. Without this the outline jumps h1 -> h3, which screen-reader
+         heading navigation reports as a missing level. -->
+    <h2 class="sr-only">Sheet settings</h2>
+    <div id="controls">
+
+      <!-- TEMPLATE -->
+      <details class="rail-section" id="section-template" open>
+        <summary class="rail-summary">
+          <h3 class="rail-heading">Template</h3>
+          <svg class="icon rail-chevron" aria-hidden="true" focusable="false"><use href="#i-chevron-down"></use></svg>
+        </summary>
+        <div class="rail-body">
+
+          <!-- app.js shows this only once the catalogue is larger than its
+               search threshold, by hiding the closest .rail-field. -->
+          <div class="field rail-field" id="template-search-wrap" hidden>
+            <label class="field-label" for="template-search">Find a template</label>
+            <input class="input" type="search" id="template-search" name="template-search" autocomplete="off" spellcheck="false" aria-describedby="template-search-status">
+            <p class="field-help" id="template-search-status" data-el="template-search-count" role="status" aria-live="polite"></p>
+          </div>
+
+          <fieldset class="fieldset-plain">
+            <legend class="sr-only">Label template</legend>
+            <!-- app.js owns every child: skeleton cards while booting, then
+                 grouped radio cards, or an .empty-note when there are none. -->
+            <div class="template-list" id="template-list"></div>
+          </fieldset>
+
+          <div class="note" id="broken-templates" hidden></div>
+
+          <div class="field rail-field">
+            <label class="field-label" for="layout-select">Text layout</label>
+            <div class="select-wrap">
+              <select class="input select" id="layout-select" name="layout-select" aria-describedby="layout-help">
+                <option value="" selected>Default (use the template&rsquo;s own elements)</option>
+              </select>
+              <svg class="icon select-chevron" aria-hidden="true" focusable="false"><use href="#i-chevron-down"></use></svg>
+            </div>
+            <p class="field-help" id="layout-help">A layout reuses this sheet&rsquo;s geometry but swaps in a different arrangement of elements.</p>
+          </div>
+
+          <p class="meta-readout">
+            <span class="meta-line" id="meta-page-line" data-el="template-meta-page"></span>
+            <span class="meta-line" id="meta-grid-line" data-el="template-meta-grid"></span>
+          </p>
+
+        </div>
+      </details>
+
+      <!-- PAGE -->
+      <details class="rail-section" id="section-page" open>
+        <summary class="rail-summary">
+          <h3 class="rail-heading">Page</h3>
+          <svg class="icon rail-chevron" aria-hidden="true" focusable="false"><use href="#i-chevron-down"></use></svg>
+        </summary>
+        <div class="rail-body">
+
+          <fieldset class="field-group">
+            <legend class="field-label">Orientation</legend>
+            <div class="segmented segmented-2">
+              <input class="segmented-input" type="radio" name="orientation" id="orient-portrait" value="portrait" checked>
+              <label class="segmented-item" for="orient-portrait">Portrait</label>
+              <input class="segmented-input" type="radio" name="orientation" id="orient-landscape" value="landscape">
+              <label class="segmented-item" for="orient-landscape">Landscape</label>
+            </div>
+          </fieldset>
+
+          <fieldset class="field-group">
+            <legend class="field-label">Page rotation</legend>
+            <div class="segmented segmented-4">
+              <input class="segmented-input" type="radio" name="page-rotation" id="rot-0" value="0" checked>
+              <label class="segmented-item" for="rot-0">0&deg;</label>
+              <input class="segmented-input" type="radio" name="page-rotation" id="rot-90" value="90">
+              <label class="segmented-item" for="rot-90">90&deg;</label>
+              <input class="segmented-input" type="radio" name="page-rotation" id="rot-180" value="180">
+              <label class="segmented-item" for="rot-180">180&deg;</label>
+              <input class="segmented-input" type="radio" name="page-rotation" id="rot-270" value="270">
+              <label class="segmented-item" for="rot-270">270&deg;</label>
+            </div>
+            <p class="field-help">Use if the printed page comes out upside down.</p>
+          </fieldset>
+
+          <div class="field rail-field check-field">
+            <input class="checkbox" type="checkbox" id="outline-slots" name="outline-slots" checked aria-describedby="outline-slots-help">
+            <label class="check-label" for="outline-slots">Draw label borders</label>
+            <p class="field-help" id="outline-slots-help">Thin guide boxes for checking alignment on plain paper. Turn off before printing on label stock.</p>
+          </div>
+
+          <div class="field rail-field check-field">
+            <input class="checkbox" type="checkbox" id="text-rotation-enabled" name="text-rotation-enabled" aria-controls="text-rotation-field" aria-describedby="text-rotation-help">
+            <label class="check-label" for="text-rotation-enabled">Override text rotation</label>
+            <p class="field-help" id="text-rotation-help">Rotates every text element, ignoring the angle each one declares.</p>
+          </div>
+
+          <div class="field rail-field field-indent" id="text-rotation-field" hidden>
+            <label class="field-label" for="text-rotation-deg">Text rotation</label>
+            <div class="input-affix">
+              <input class="input input-num" type="number" id="text-rotation-deg" data-el="text-rotation" name="text-rotation-deg" value="0" step="90" min="-360" max="360" inputmode="decimal">
+              <span class="affix" aria-hidden="true">deg</span>
+            </div>
+          </div>
+
+        </div>
+      </details>
+
+      <!-- MARGINS -->
+      <details class="rail-section" id="section-margins" open>
+        <summary class="rail-summary">
+          <h3 class="rail-heading">Margins</h3>
+          <svg class="icon rail-chevron" aria-hidden="true" focusable="false"><use href="#i-chevron-down"></use></svg>
+        </summary>
+        <div class="rail-body">
+
+          <fieldset class="field-group">
+            <legend class="field-label">Display units</legend>
+            <div class="segmented segmented-2 segmented-compact">
+              <input class="segmented-input" type="radio" name="margin-unit" id="unit-mm" value="mm" checked>
+              <label class="segmented-item" for="unit-mm">mm</label>
+              <input class="segmented-input" type="radio" name="margin-unit" id="unit-in" value="in">
+              <label class="segmented-item" for="unit-in">in</label>
+            </div>
+            <p class="field-help">Display only. Geometry is sent to the renderer in millimetres.</p>
+          </fieldset>
+
+          <p class="sr-only" id="margin-unit-hint">Millimetres unless the inch unit is selected.</p>
+
+          <fieldset class="field-group">
+            <legend class="sr-only">Page margins</legend>
+            <div class="crosshair" id="margin-crosshair">
+
+              <div class="crosshair-cell crosshair-top">
+                <label class="field-label" for="margin-top">Top</label>
+                <div class="input-affix">
+                  <input class="input input-num" type="number" id="margin-top" name="margin-top" value="0" step="0.5" min="0" inputmode="decimal" aria-describedby="margin-unit-hint">
+                  <span class="affix" data-unit-suffix aria-hidden="true">mm</span>
+                </div>
+              </div>
+
+              <div class="crosshair-cell crosshair-left">
+                <label class="field-label" for="margin-left">Left</label>
+                <div class="input-affix">
+                  <input class="input input-num" type="number" id="margin-left" name="margin-left" value="0" step="0.5" min="0" inputmode="decimal" aria-describedby="margin-unit-hint">
+                  <span class="affix" data-unit-suffix aria-hidden="true">mm</span>
+                </div>
+              </div>
+
+              <div class="crosshair-glyph" aria-hidden="true">
+                <svg viewBox="0 0 44 56" focusable="false"><rect x="1" y="1" width="42" height="54" rx="1.5"/><rect class="crosshair-glyph-inner" x="6" y="9" width="32" height="38"/></svg>
+              </div>
+
+              <div class="crosshair-cell crosshair-right">
+                <label class="field-label" for="margin-right">Right</label>
+                <div class="input-affix">
+                  <input class="input input-num" type="number" id="margin-right" name="margin-right" value="0" step="0.5" min="0" inputmode="decimal" aria-describedby="margin-unit-hint">
+                  <span class="affix" data-unit-suffix aria-hidden="true">mm</span>
+                </div>
+              </div>
+
+              <div class="crosshair-cell crosshair-bottom">
+                <label class="field-label" for="margin-bottom">Bottom</label>
+                <div class="input-affix">
+                  <input class="input input-num" type="number" id="margin-bottom" name="margin-bottom" value="0" step="0.5" min="0" inputmode="decimal" aria-describedby="margin-unit-hint">
+                  <span class="affix" data-unit-suffix aria-hidden="true">mm</span>
+                </div>
+              </div>
+
+            </div>
+          </fieldset>
+
+          <button class="btn btn-tertiary" id="btn-reset-margins" data-el="margins-reset" type="button">Reset to template</button>
+
+        </div>
+      </details>
+
+      <!-- EXPORT -->
+      <details class="rail-section rail-section-export" id="section-export" open>
+        <summary class="rail-summary">
+          <h3 class="rail-heading">Export</h3>
+          <svg class="icon rail-chevron" aria-hidden="true" focusable="false"><use href="#i-chevron-down"></use></svg>
+        </summary>
+        <div class="rail-body">
+
+          <div class="field rail-field">
+            <label class="field-label" for="filename">File name</label>
+            <div class="input-affix">
+              <input class="input" type="text" id="filename" name="filename" value="labels" autocomplete="off" spellcheck="false" aria-describedby="filename-help">
+              <span class="affix" aria-hidden="true">.pdf</span>
+            </div>
+            <p class="field-help" id="filename-help">The .pdf extension is added automatically.</p>
+          </div>
+
+          <!-- Text only: app.js rewrites this button's label, so it must own no
+               child nodes of its own. This is the one accent fill on the page. -->
+          <button class="btn btn-primary btn-block" id="btn-download" data-el="download-pdf" type="button" aria-describedby="export-reason">Download PDF</button>
+          <p class="field-help" id="export-reason" data-el="export-hint" hidden></p>
+          <div class="alert" id="export-error" hidden></div>
+
+          <button class="btn btn-tertiary btn-block" id="btn-copy-cli" data-el="copy-cli" type="button">Copy CLI command</button>
+
+        </div>
+      </details>
+
+    </div>
+  </aside>
+
+  <!-- ---------- desk ---------- -->
+  <section class="desk" id="desk" aria-label="Sheet preview">
+
+    <div class="preview-toolbar" id="preview-toolbar">
+      <div class="toolbar-left">
+        <span class="toolbar-check">
+          <input class="checkbox" type="checkbox" id="show-margins" name="show-margins">
+          <label class="check-label" for="show-margins">Show margins</label>
+        </span>
+        <span class="toolbar-check" id="dim-sheet-field">
+          <input class="checkbox" type="checkbox" id="dim-sheet" name="dim-sheet">
+          <label class="check-label" for="dim-sheet">Dim sheet</label>
+        </span>
+      </div>
+
+      <div class="toolbar-right">
+        <div class="page-stepper" id="page-stepper" hidden>
+          <button class="icon-btn icon-btn-quiet" id="btn-page-prev" data-el="page-prev" type="button" aria-label="Previous page">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-left"></use></svg>
+          </button>
+          <span class="page-indicator" id="page-indicator">1 / 1</span>
+          <button class="icon-btn icon-btn-quiet" id="btn-page-next" data-el="page-next" type="button" aria-label="Next page">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <figure class="preview-stage" id="preview-stage">
+
+      <div class="sheet-figure" id="sheet-figure" data-el="sheet">
+        <img class="preview-image" id="preview-image" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" decoding="async">
+        <!-- Guides are pure CSS: app.js sets --margin-*-pct on the figure and
+             toggles .show-margins, so nothing here needs an id. -->
+        <span class="margin-guide margin-guide-top" aria-hidden="true"></span>
+        <span class="margin-guide margin-guide-right" aria-hidden="true"></span>
+        <span class="margin-guide margin-guide-bottom" aria-hidden="true"></span>
+        <span class="margin-guide margin-guide-left" aria-hidden="true"></span>
+        <!-- Replaces the sheet in place, at the same size and shape: geometry
+             errors and the no-records state. Filled by app.js. -->
+        <div class="sheet-overlay" id="sheet-overlay" hidden></div>
+        <div class="sheet-skeleton skeleton" id="sheet-skeleton" data-skeleton aria-hidden="true"></div>
+      </div>
+
+      <figcaption class="sheet-caption" id="sheet-caption"></figcaption>
+
+    </figure>
+
+    <dl class="stat-row">
+      <div class="stat">
+        <dt class="stat-label">Labels</dt>
+        <dd class="stat-value" id="stat-labels">0</dd>
+      </div>
+      <div class="stat">
+        <dt class="stat-label">Pages</dt>
+        <dd class="stat-value" id="stat-pages">0</dd>
+      </div>
+      <div class="stat">
+        <dt class="stat-label">Per sheet</dt>
+        <dd class="stat-value" id="stat-per-sheet">0</dd>
+      </div>
+    </dl>
+
+  </section>
+
+  <!-- ---------- records ---------- -->
+  <section class="records" id="records" data-el="records-panel" aria-label="Records">
+
+    <div class="records-resizer" id="records-resizer" role="separator" aria-orientation="horizontal"
+         aria-label="Records panel height" aria-valuenow="320" aria-valuemin="160" aria-valuemax="720" tabindex="0">
+      <span class="records-grab" aria-hidden="true"></span>
+    </div>
+
+    <div class="records-bar">
+      <button class="icon-btn icon-btn-quiet" id="records-toggle" type="button"
+              aria-expanded="true" aria-controls="records-body" aria-label="Collapse records">
+        <svg class="icon records-chevron" aria-hidden="true" focusable="false"><use href="#i-chevron-up"></use></svg>
+      </button>
+
+      <span class="records-title">Records</span>
+      <span class="records-summary" id="records-summary">0 labels &middot; 0 fields</span>
+      <span class="status-pill" id="records-chip" data-el="records-status">no data yet</span>
+
+      <span class="records-bar-spacer"></span>
+
+      <label class="sr-only" for="file-input">Import a CSV or JSON file</label>
+      <input class="sr-only" type="file" id="file-input" data-el="import-file" accept=".csv,.tsv,.json,text/csv,application/json">
+      <button class="btn btn-tertiary btn-sm" id="btn-import" data-el="import-records" type="button">Import&hellip;</button>
+    </div>
+
+    <p class="field-error records-import-error" id="import-error" hidden></p>
+
+    <div class="records-body" id="records-body">
+
+      <div class="records-head">
+        <div class="tablist" role="tablist" aria-label="Record editor view">
+          <button class="tab" id="tab-table" type="button" role="tab" aria-selected="true" aria-controls="panel-table">Table</button>
+          <button class="tab" id="tab-json" type="button" role="tab" aria-selected="false" aria-controls="panel-json">JSON</button>
+        </div>
+
+        <div class="chip-row" id="field-chips" aria-label="Template fields"></div>
+
+        <div class="records-head-actions">
+          <button class="btn btn-tertiary btn-sm" id="btn-format-json" data-el="format-json" type="button">Format</button>
+          <button class="btn btn-tertiary btn-sm" id="btn-add-row" data-el="add-row" type="button">Add row</button>
+          <button class="btn btn-tertiary btn-sm" id="btn-clear-records" data-el="clear-records" type="button">Clear</button>
+        </div>
+      </div>
+
+      <p class="note-line" id="records-no-fields-note" hidden>This template prints fixed content in every slot &mdash; it needs no records.</p>
+
+      <div class="records-editor">
+
+        <div class="tabpanel" id="panel-table" role="tabpanel" aria-labelledby="tab-table" tabindex="0">
+          <!-- app.js owns the head and body rows; the caption is permanent. -->
+          <table class="records-table" id="records-table">
+            <caption class="sr-only">Label records. One row per label, one column per field.</caption>
+          </table>
+          <p class="footer-hint">Paste CSV or TSV into any cell to fill down. Drop a .csv or .json file anywhere on this panel to import it.</p>
+        </div>
+
+        <div class="tabpanel" id="panel-json" role="tabpanel" aria-labelledby="tab-json" tabindex="0" hidden>
+          <div class="json-editor-wrap">
+            <div class="json-gutter" id="json-gutter" data-el="records-gutter" aria-hidden="true"></div>
+            <label class="sr-only" for="json-editor">Record document, JSON</label>
+            <textarea class="json-editor" id="json-editor" data-el="records-json" name="json-editor" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off" wrap="off" aria-describedby="json-editor-help"></textarea>
+          </div>
+          <p class="field-help" id="json-editor-help">JSON record document. Press Escape then Tab to leave this field.</p>
+        </div>
+
+      </div>
+
+      <!-- app.js appends one .validation-line per problem and hides the strip
+           when there are none. Polite, so nobody is interrupted mid-keystroke. -->
+      <div class="validation-strip" id="validation-strip" role="status" aria-live="polite" hidden></div>
+
+    </div>
+
+  </section>
+</main>
+
+<!-- ===================== docs ===================== -->
+<div class="docs">
+
+  <section class="doc-section" id="how-it-works" aria-labelledby="how-it-works-title">
+    <h2 class="doc-title" id="how-it-works-title">How it works</h2>
+    <ol class="steps">
+      <li class="step">
+        <span class="step-num" aria-hidden="true">1</span>
+        <div class="step-body">
+          <h3 class="step-title">Pick a sheet</h3>
+          <p>
+            A label template is a JSON file under <code>data/templates/labels/</code>. It declares the page size,
+            the grid (rows, columns, margins, gaps, label size) and the elements printed inside each label.
+            Every length can be written in millimetres or inches; the renderer normalises to millimetres.
+            The Avery presets are the same thing, generated from published stock dimensions.
+          </p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-num" aria-hidden="true">2</span>
+        <div class="step-body">
+          <h3 class="step-title">Add records</h3>
+          <p>
+            Records are a <code>{"schema": [...], "records": [...]}</code> document: one record per label, one key
+            per field the template references. Type them into the table, paste them into the JSON editor, or
+            import a CSV (header row required) or JSON file. Import is parsed in memory; nothing is stored on
+            the server.
+          </p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-num" aria-hidden="true">3</span>
+        <div class="step-body">
+          <h3 class="step-title">Download the PDF</h3>
+          <p>
+            The preview above is a render of the real PDF, so what you check is what prints. When it looks
+            right, export it &mdash; or run the same job from the command line with
+            <code>label-sheet generate</code> and keep it in a script.
+          </p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="doc-section" id="json-format" aria-labelledby="json-format-title">
+    <h2 class="doc-title" id="json-format-title">Template JSON</h2>
+    <p class="doc-lead">
+      This is <code>data/templates/labels/basic-address.json</code>, shipped with the package and selectable above.
+      A label template is a page, a grid, and a list of elements positioned relative to the top-left of one label.
+    </p>
+
+    <div class="code-block">
+      <pre class="code"><code id="code-template-json">{
+  &quot;template_type&quot;: &quot;label&quot;,
+  &quot;name&quot;: &quot;basic-address-labels&quot;,
+  &quot;page&quot;: {
+    &quot;width_mm&quot;: 215.9,
+    &quot;height_mm&quot;: 279.4
+  },
+  &quot;grid&quot;: {
+    &quot;rows&quot;: 10,
+    &quot;cols&quot;: 3,
+    &quot;margin_left_mm&quot;: 4.7625,
+    &quot;margin_top_mm&quot;: 12.7,
+    &quot;margin_right_mm&quot;: 4.7625,
+    &quot;margin_bottom_mm&quot;: 12.7,
+    &quot;gap_x_mm&quot;: 3.175,
+    &quot;label_width_mm&quot;: 66.675,
+    &quot;label_height_mm&quot;: 25.4
+  },
+  &quot;elements&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;x_mm&quot;: 4.0,
+      &quot;y_mm&quot;: 3.0,
+      &quot;width_mm&quot;: 58.0,
+      &quot;height_mm&quot;: 7.0,
+      &quot;field&quot;: &quot;name&quot;,
+      &quot;font_name&quot;: &quot;Helvetica-Bold&quot;
+    },
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;x_mm&quot;: 4.0,
+      &quot;y_mm&quot;: 11.0,
+      &quot;width_mm&quot;: 58.0,
+      &quot;height_mm&quot;: 8.0,
+      &quot;template&quot;: &quot;{address_1}\n{address_2}&quot;,
+      &quot;font_size_pt&quot;: 8.0
+    },
+    {
+      &quot;type&quot;: &quot;barcode&quot;,
+      &quot;x_mm&quot;: 4.0,
+      &quot;y_mm&quot;: 18.0,
+      &quot;width_mm&quot;: 50.0,
+      &quot;height_mm&quot;: 6.0,
+      &quot;field&quot;: &quot;sku&quot;
+    }
+  ],
+  &quot;metadata&quot;: {
+    &quot;equivalent_to&quot;: &quot;Avery 5160 / 5260 / 5960 / 8160&quot;,
+    &quot;source&quot;: &quot;Avery 5160 datasheet: 8.5 x 11 in sheet, 0.1875 in side margins, 0.5 in top/bottom margins, 2.75 in horizontal pitch, 1 in vertical pitch&quot;
+  }
+}</code></pre>
+    </div>
+
+    <dl class="def-list">
+      <dt><code>page</code></dt>
+      <dd>The sheet of stock: <code>width_mm</code> and <code>height_mm</code>. 215.9 &times; 279.4 mm is US Letter.</dd>
+
+      <dt><code>grid</code></dt>
+      <dd>
+        <code>rows</code> and <code>cols</code>, the four page margins, the gaps between labels, and the label size.
+        Give the label size or let it be derived from the page, margins and gaps &mdash; if both are given they must agree
+        within the renderer&rsquo;s tolerance, otherwise you get a geometry error instead of a silently wrong sheet.
+      </dd>
+
+      <dt><code>elements</code></dt>
+      <dd>
+        What is drawn inside one label, repeated in every slot. Coordinates are measured from the top-left corner
+        of the label, not of the page. Three types:
+        <code>text</code> (<code>field</code> or <code>template</code>, <code>font_name</code>, <code>font_size_pt</code>,
+        <code>align</code>: left / center / right / justify, <code>rotation_deg</code>),
+        <code>barcode</code> (<code>barcode_type</code>: code128 / ean13 / qr), and
+        <code>image</code> (a sandboxed asset name plus a fit mode).
+      </dd>
+
+      <dt><code>_mm</code> and <code>_in</code></dt>
+      <dd>
+        Every length key accepts either suffix &mdash; <code>width_mm</code> or <code>width_in</code>. Use whichever
+        matches the stock you bought; the renderer normalises to millimetres and remembers the unit you authored in
+        so the file round-trips unchanged.
+      </dd>
+
+      <dt>Field references</dt>
+      <dd>
+        <code>"field": "name"</code> prints one value. <code>"template": "{address_1}\n{address_2}"</code> composes
+        several, and <code>\n</code> is a real line break. Only <code>{identifier}</code> placeholders are
+        substituted &mdash; there is no expression language, so a record value can never execute anything.
+      </dd>
+    </dl>
+
+    <p class="doc-lead">
+      A text layout is the second half of the pair: the same geometry, a different arrangement. Select one in
+      <strong>Text layout</strong> above to reuse a sheet&rsquo;s grid with different elements.
+    </p>
+
+    <div class="code-block">
+      <pre class="code"><code id="code-layout-json">{
+  &quot;template_type&quot;: &quot;text-layout&quot;,
+  &quot;name&quot;: &quot;basic-address-layout&quot;,
+  &quot;elements&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;x_mm&quot;: 4.0,
+      &quot;y_mm&quot;: 3.0,
+      &quot;width_mm&quot;: 58.0,
+      &quot;height_mm&quot;: 7.0,
+      &quot;field&quot;: &quot;name&quot;,
+      &quot;font_name&quot;: &quot;Helvetica-Bold&quot;
+    },
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;x_mm&quot;: 4.0,
+      &quot;y_mm&quot;: 11.0,
+      &quot;width_mm&quot;: 58.0,
+      &quot;height_mm&quot;: 8.0,
+      &quot;template&quot;: &quot;{address_1}\n{address_2}&quot;,
+      &quot;font_size_pt&quot;: 8.0
+    },
+    {
+      &quot;type&quot;: &quot;barcode&quot;,
+      &quot;x_mm&quot;: 4.0,
+      &quot;y_mm&quot;: 18.0,
+      &quot;width_mm&quot;: 50.0,
+      &quot;height_mm&quot;: 6.0,
+      &quot;field&quot;: &quot;sku&quot;
+    }
+  ]
+}</code></pre>
+    </div>
+
+    <p class="doc-lead">
+      Record documents look like this &mdash; a bare JSON array is accepted on import and normalised to the object form:
+    </p>
+
+    <div class="code-block">
+      <pre class="code"><code id="code-records-json">{
+  "schema": ["name", "address_1", "address_2", "sku"],
+  "records": [
+    {
+      "name": "Ada Lovelace",
+      "address_1": "12 Analytical Engine Way",
+      "address_2": "London",
+      "sku": "AL-1001"
+    }
+  ]
+}</code></pre>
+    </div>
+  </section>
+
+  <section class="doc-section" id="cli" aria-labelledby="cli-title">
+    <h2 class="doc-title" id="cli-title">CLI</h2>
+    <p class="doc-lead">
+      The web app is a front end for the same library the command line uses. Anything you can preview here you can
+      put in a Makefile.
+    </p>
+
+    <div class="code-block">
+      <pre class="code"><code id="code-cli"># Render a sheet from a template and a record document
+label-sheet generate basic-address out.pdf --records records.json
+
+# Show every template the catalogue could load, with its grid and fields
+label-sheet list-templates
+
+# Write an Avery preset out as a template JSON you can edit
+label-sheet avery-template 5160 out.json</code></pre>
+    </div>
+
+    <p class="doc-note">
+      <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
+      <span><strong>Copy CLI command</strong> in the Export section writes the exact invocation for the settings
+      you have chosen, omitting every flag that is already at its default.</span>
+    </p>
+  </section>
+
+  <footer class="site-footer">
+    <nav class="footer-links" aria-label="Footer">
+      <a href="https://github.com/">GitHub</a>
+      <a href="https://github.com/">README</a>
+      <a href="/docs">API docs</a>
+      <a href="https://github.com/">Issue tracker</a>
+      <span class="footer-meta">MIT licence</span>
+    </nav>
+    <p class="footer-note">
+      Uploads are processed in memory and in a short-lived temporary file that is deleted after each request.
+      Nothing is written to persistent storage on the server.
+    </p>
+    <p class="footer-note">
+      Your work in progress is kept in this browser only.
+      <button class="btn btn-tertiary btn-sm" id="btn-reset-everything" data-el="reset-everything" type="button">Reset everything</button>
+    </p>
+  </footer>
+
+</div>
+
+<dialog class="dialog" id="dlg-reset" data-el="reset-dialog" aria-labelledby="dlg-reset-title">
+  <header class="dialog-head">
+    <h2 class="dialog-title" id="dlg-reset-title">Reset everything?</h2>
+  </header>
+  <div class="dialog-body">
+    <p>This clears your saved settings and the records held in this tab. It does not touch anything on the server.</p>
+  </div>
+  <!-- method="dialog" closes natively, so Cancel works with no script at all. -->
+  <form class="dialog-foot" method="dialog">
+    <button class="btn btn-tertiary" id="btn-reset-cancel" type="submit" value="cancel">Cancel</button>
+    <button class="btn btn-primary" id="btn-reset-confirm" data-el="reset-confirm" type="submit" value="confirm">Reset everything</button>
+  </form>
+</dialog>
+
+<div class="toast-region" id="toast-region" aria-live="polite"></div>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

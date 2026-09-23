@@ -1,0 +1,51 @@
+{
+  "template_type": "label",
+  "name": "basic-address-labels-inch",
+  "page": {
+    "width_in": 8.5,
+    "height_in": 11.0
+  },
+  "grid": {
+    "rows": 10,
+    "cols": 3,
+    "margin_left_in": 0.1875,
+    "margin_top_in": 0.5,
+    "margin_right_in": 0.1875,
+    "margin_bottom_in": 0.5,
+    "gap_x_in": 0.125,
+    "label_width_in": 2.625,
+    "label_height_in": 1.0
+  },
+  "elements": [
+    {
+      "type": "text",
+      "x_in": 0.16,
+      "y_in": 0.12,
+      "width_in": 2.28,
+      "height_in": 0.28,
+      "field": "name",
+      "font_name": "Helvetica-Bold"
+    },
+    {
+      "type": "text",
+      "x_in": 0.16,
+      "y_in": 0.43,
+      "width_in": 2.28,
+      "height_in": 0.31,
+      "template": "{address_1}\n{address_2}",
+      "font_size_pt": 8.0
+    },
+    {
+      "type": "barcode",
+      "x_in": 0.16,
+      "y_in": 0.71,
+      "width_in": 1.97,
+      "height_in": 0.24,
+      "field": "sku"
+    }
+  ],
+  "metadata": {
+    "equivalent_to": "Avery 5160 / 5260 / 5960 / 8160",
+    "source": "Avery 5160 datasheet: 8.5 x 11 in sheet, 0.1875 in side margins, 0.5 in top/bottom margins, 2.75 in horizontal pitch, 1 in vertical pitch"
+  }
+}
